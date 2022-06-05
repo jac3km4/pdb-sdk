@@ -1,0 +1,16 @@
+[package]
+name = "pdb-sdk"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+thiserror = "1.0"
+derive-getters = "0.2"
+modular-bitfield = "0.11"
+
+[dependencies.declio]
+git = "https://github.com/jac3km4/declio.git"
+rev = "ccc6949"
+
+[dev-dependencies]
+assert_matches = "1.5"
