@@ -3,7 +3,9 @@ use std::io;
 
 use pdb_sdk::builders::PdbBuilder;
 use pdb_sdk::codeview::symbols::{Constant, ProcedureProperties, Public, PublicProperties, SymbolRecord};
-use pdb_sdk::codeview::types::{BuiltinType, IdRecord, PointerKind, PointerProperties, TypeRecord};
+use pdb_sdk::codeview::types::{
+    BuiltinType, IdRecord, MemberProperties, PointerKind, PointerProperties, TypeRecord
+};
 use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::result::Result;
 use pdb_sdk::utils::StrBuf;
@@ -18,6 +20,14 @@ fn main() -> Result<()> {
             .with_is_volatile(true)
             .with_kind(PointerKind::Near64),
         containing_class: None,
+    });
+    builder.tpi().add("pointer_type", TypeRecord::FieldList {
+        fields: vec![TypeRecord::DataMember {
+            properties: MemberProperties::new().with_is_pseudo(true),
+            field_type: Some(BuiltinType::I16.into()),
+            offset: Integer::I16(0),
+            name: StrBuf::new("field"),
+        }],
     });
     builder.ipi().add("string_id", IdRecord::StringId {
         id: None,
