@@ -13,4 +13,6 @@ git = "https://github.com/jac3km4/declio.git"
 rev = "ccc6949"
 
 [dev-dependencies]
+anyhow = "1.0.98"
 assert_matches = "1.5"
+object = "0.37.1"
