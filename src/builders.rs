@@ -57,6 +57,8 @@ impl PdbBuilder {
         sink.write_all(EMPTY_BLOCK)?;
         sink.write_all(EMPTY_BLOCK)?;
 
+        self.dbi.age = self.info.age;
+
         let info_layout = self.info.commit(&mut sink)?;
         let dbi_layout = self.dbi.commit(&mut sink, &mut allocator)?;
         let tpi_layout = self.tpi.commit(&mut sink, &mut allocator)?;
@@ -113,6 +115,7 @@ impl PdbBuilder {
 
 #[derive(Debug, Default)]
 pub struct DbiBuilder {
+    age: u32,
     symbols: SymbolsBuilder,
     modules: Vec<ModuleBuilder>,
     section_contribs: Vec<SectionContrib>,
@@ -193,7 +196,7 @@ impl DbiBuilder {
         let header = DbiHeader {
             signature: DbiSignature,
             version: DbiVersion::V70,
-            age: 1,
+            age: self.age,
             global_symbol_stream_index: streams.globals,
             build_number: BuildNumber::new()
                 .with_major(14)
@@ -259,12 +262,23 @@ impl DbiBuilder {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct InfoBuilder {
     signature: u32,
     age: u32,
     guid: Guid,
     named_streams: Vec<(StreamIndex, String)>,
+}
+
+impl Default for InfoBuilder {
+    fn default() -> Self {
+        Self {
+            signature: 0,
+            age: 1,
+            guid: Default::default(),
+            named_streams: Default::default(),
+        }
+    }
 }
 
 impl InfoBuilder {
