@@ -249,9 +249,9 @@ pub struct DescriptorFlags {
     pub is_readable: bool,
     pub is_writable: bool,
     pub is_executable: bool,
+    pub is_32bit: bool,
     #[skip]
     padding: B4,
-    pub is_32bit: bool,
     pub is_selector: bool,
     pub is_absolute: bool,
     pub is_group: bool,
