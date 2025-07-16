@@ -15,7 +15,7 @@ use crate::publics::Publics;
 use crate::result::Result;
 use crate::strings::StringsBuilder;
 use crate::symbol_map::Globals;
-use crate::types::{TypeHash, TypeStreamHeader, FIRST_NON_BUILTIN_TYPE, HASH_BUCKET_NUMBER};
+use crate::types::{IndexOffset, TypeHash, TypeStreamHeader, FIRST_NON_BUILTIN_TYPE, HASH_BUCKET_NUMBER};
 use crate::utils::{align_to, StrBuf};
 use crate::{
     codecs, constants, BuiltinStream, Guid, MsfStreamLayout, StreamIndex, SymbolOffset, TypeIndex
@@ -192,6 +192,13 @@ impl DbiBuilder {
         self.debug_streams.push(StreamIndex(u16::MAX)); // omap_to_src
         self.debug_streams.push(StreamIndex(u16::MAX)); // omap_from_src
         self.debug_streams.push(section_headers);
+        self.debug_streams.push(StreamIndex(u16::MAX)); // token_rid_map
+        self.debug_streams.push(StreamIndex(u16::MAX)); // xdata
+        self.debug_streams.push(StreamIndex(u16::MAX)); // pdata
+        self.debug_streams.push(StreamIndex(u16::MAX)); // framedata
+        self.debug_streams.push(StreamIndex(u16::MAX)); // original_section_headers
+
+        let modi_stream_size = codecs::padded_rem_list::encoded_size(&modules, constants::ENDIANESS) as u32;
 
         let header = DbiHeader {
             signature: DbiSignature,
@@ -206,7 +213,7 @@ impl DbiBuilder {
             dll_version: 0,
             sym_record_stream_index: streams.symbols,
             rbld: 0,
-            modi_stream_size: modules.encoded_size(()) as u32,
+            modi_stream_size,
             sec_contr_stream_size: u16::default_encoded_size(()) as u32 * 2
                 + self.section_contribs.encoded_size(()) as u32,
             section_map_size: u16::default_encoded_size(()) as u32 * 2
@@ -222,13 +229,18 @@ impl DbiBuilder {
         };
 
         let mut stream = DefaultMsfStreamWriter::new(sink)?;
+        // header size
         header.encode((), &mut stream)?;
 
+        // modi_stream_size
         codecs::padded_rem_list::encode(&modules, constants::ENDIANESS, &mut stream)?;
 
+        // sec_contr_stream_size
+        // TODO this is duplicated with modules, should restructure builder
         SectionContribVersion::Ver60.encode(constants::ENDIANESS, &mut stream)?;
         self.section_contribs.encode(((),), &mut stream)?;
 
+        // section_map_size
         let section_map_len = self.section_entries.len() as u16;
         section_map_len.encode(constants::ENDIANESS, &mut stream)?;
         section_map_len.encode(constants::ENDIANESS, &mut stream)?;
@@ -361,21 +373,33 @@ where
         S: io::Write + io::Seek,
     {
         let mut writer = DefaultMsfStreamWriter::new(sink)?;
-        let hash = TypeHash {
+        let mut hash = TypeHash {
             hash_values: self.hashes,
             index_offsets: vec![],
             hash_adjusters: Table::default(),
         };
+
+        let last_index = TypeIndex::try_from(FIRST_NON_BUILTIN_TYPE + self.records.len() as u32).unwrap();
+
+        let mut type_buffer = std::io::Cursor::new(vec![]);
+
+        for (index, typ) in self.records.into_iter().enumerate() {
+            hash.index_offsets.push(IndexOffset {
+                index: (index as u32 + FIRST_NON_BUILTIN_TYPE).try_into().unwrap(),
+                offset: type_buffer.position() as u32,
+            });
+            PrefixedRecord(typ).encode((), &mut type_buffer)?;
+        }
+
         let hash_layout = hash.write(&mut writer)?;
         let hash_stream = allocator.allocate(writer.finish()?);
-        let last_index = TypeIndex::try_from(FIRST_NON_BUILTIN_TYPE + self.records.len() as u32).unwrap();
 
         let mut writer = DefaultMsfStreamWriter::new(sink)?;
         let header = TypeStreamHeader::new(last_index, self.offset as u32, hash_stream, hash_layout);
         header.encode((), &mut writer)?;
-        for typ in self.records {
-            PrefixedRecord(typ).encode((), &mut writer)?;
-        }
+
+        writer.write_all(&type_buffer.into_inner())?;
+
         Ok(writer.finish()?)
     }
 }

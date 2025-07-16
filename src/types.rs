@@ -179,8 +179,8 @@ impl TypeHash {
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub(crate) struct IndexOffset {
-    index: TypeIndex,
-    offset: u32,
+    pub(crate) index: TypeIndex,
+    pub(crate) offset: u32,
 }
 
 #[derive(Debug, Encode, Decode)]
