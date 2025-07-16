@@ -198,12 +198,12 @@ impl_bitfield_codecs!(ModuleInfoFlags);
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SectionContrib {
     pub i_sect: u16,
-    pad1: [u8; 2],
+    pub pad1: [u8; 2],
     pub offset: i32,
     pub size: u32,
     pub characteristics: u32,
     pub i_mod: u16,
-    pad2: [u8; 2],
+    pub pad2: [u8; 2],
     pub data_crc: u32,
     pub reloc_crc: u32,
 }

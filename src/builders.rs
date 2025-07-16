@@ -436,9 +436,9 @@ impl<'a> PublicsBuilder<'a> {
 
 #[derive(Debug, Default)]
 pub struct SymbolsBuilder {
-    publics: BTreeMap<SymbolOffset, Public>,
-    globals: BTreeMap<SymbolOffset, SymbolRecord>,
-    offset: u32,
+    pub publics: BTreeMap<SymbolOffset, Public>,
+    pub globals: BTreeMap<SymbolOffset, SymbolRecord>,
+    pub offset: u32,
 }
 
 impl SymbolsBuilder {
@@ -484,7 +484,7 @@ pub struct ModuleBuilder {
     name: String,
     obj_file_name: String,
     section_contrib: SectionContrib,
-    symbols: Vec<SymbolRecord>,
+    pub symbols: Vec<SymbolRecord>,
     debug_entries: Vec<DebugSubsectionEntry>,
     source_files: Vec<String>,
     offset: u32,
