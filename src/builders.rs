@@ -46,7 +46,7 @@ impl PdbBuilder {
         &mut self.ipi
     }
 
-    pub fn commit<S>(self, mut sink: S) -> Result<()>
+    pub fn commit<S>(mut self, mut sink: S) -> Result<()>
     where
         S: io::Write + io::Seek,
     {
@@ -117,6 +117,7 @@ pub struct DbiBuilder {
     modules: Vec<ModuleBuilder>,
     section_contribs: Vec<SectionContrib>,
     section_entries: Vec<SectionMapEntry>,
+    section_headers: Vec<SectionHeader>,
     names: StringsBuilder,
     debug_streams: Vec<StreamIndex>,
 }
@@ -143,7 +144,12 @@ impl DbiBuilder {
         self
     }
 
-    fn commit<S>(self, sink: &mut S, allocator: &mut StreamAllocator) -> Result<MsfStreamLayout>
+    pub fn add_section_header(&mut self, section: SectionHeader) -> &mut Self {
+        self.section_headers.push(section);
+        self
+    }
+
+    fn commit<S>(mut self, sink: &mut S, allocator: &mut StreamAllocator) -> Result<MsfStreamLayout>
     where
         S: io::Write + io::Seek,
     {
@@ -165,6 +171,24 @@ impl DbiBuilder {
             files.push(names);
         }
         let names = self.names.build();
+
+        let section_headers = if self.section_headers.is_empty() {
+            StreamIndex(u16::MAX)
+        } else {
+            let mut section_headers = DefaultMsfStreamWriter::new(sink)?;
+            for section in self.section_headers {
+                section.encode((), &mut section_headers)?;
+            }
+            let section_headers_layout = section_headers.finish()?;
+            allocator.allocate(section_headers_layout)
+        };
+
+        self.debug_streams.push(StreamIndex(u16::MAX)); // fpo
+        self.debug_streams.push(StreamIndex(u16::MAX)); // exception
+        self.debug_streams.push(StreamIndex(u16::MAX)); // fixup
+        self.debug_streams.push(StreamIndex(u16::MAX)); // omap_to_src
+        self.debug_streams.push(StreamIndex(u16::MAX)); // omap_from_src
+        self.debug_streams.push(section_headers);
 
         let header = DbiHeader {
             signature: DbiSignature,
