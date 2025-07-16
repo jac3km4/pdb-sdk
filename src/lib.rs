@@ -68,13 +68,13 @@ where
         Ok(res)
     }
 
-    fn get_indexed_stream(&mut self, index: StreamIndex) -> Option<BufMsfStream<&mut R>> {
+    fn get_indexed_stream(&mut self, index: StreamIndex) -> Option<BufMsfStream<'_, &mut R>> {
         let layout = self.layouts.get(index.0 as usize)?;
         let msf = MsfStream::new(&mut self.inner, layout, self.block_size);
         Some(io::BufReader::new(msf))
     }
 
-    fn get_stream(&mut self, stream: BuiltinStream) -> Option<BufMsfStream<&mut R>> {
+    fn get_stream(&mut self, stream: BuiltinStream) -> Option<BufMsfStream<'_, &mut R>> {
         self.get_indexed_stream(StreamIndex(stream as u16))
     }
 

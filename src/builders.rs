@@ -126,7 +126,7 @@ pub struct DbiBuilder {
 }
 
 impl DbiBuilder {
-    pub fn symbols(&mut self) -> PublicsBuilder {
+    pub fn symbols(&mut self) -> PublicsBuilder<'_> {
         PublicsBuilder {
             symbols: &mut self.symbols,
         }

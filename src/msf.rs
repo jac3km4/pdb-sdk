@@ -199,7 +199,7 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct FreeBlockMap(Vec<u8>);
+pub(crate) struct FreeBlockMap(#[allow(unused)] Vec<u8>);
 
 impl FreeBlockMap {
     pub fn layout(main: &SuperBlock) -> MsfStreamLayout {
