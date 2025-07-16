@@ -194,7 +194,7 @@ pub struct ModuleInfoFlags {
 
 impl_bitfield_codecs!(ModuleInfoFlags);
 
-#[derive(Debug, Encode, Decode, EncodedSize)]
+#[derive(Debug, Clone, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SectionContrib {
     pub i_sect: u16,

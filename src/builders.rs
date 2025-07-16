@@ -118,7 +118,6 @@ pub struct DbiBuilder {
     age: u32,
     symbols: SymbolsBuilder,
     modules: Vec<ModuleBuilder>,
-    section_contribs: Vec<SectionContrib>,
     section_entries: Vec<SectionMapEntry>,
     section_headers: Vec<SectionHeader>,
     names: StringsBuilder,
@@ -134,11 +133,6 @@ impl DbiBuilder {
 
     pub fn add_module(&mut self, module: ModuleBuilder) -> &mut Self {
         self.modules.push(module);
-        self
-    }
-
-    pub fn add_section_contrib(&mut self, section: SectionContrib) -> &mut Self {
-        self.section_contribs.push(section);
         self
     }
 
@@ -168,7 +162,9 @@ impl DbiBuilder {
             + file_count * u32::default_encoded_size(());
         let file_names_size: usize = file_names.map(|s| s.len() + 1).sum();
 
+        let mut section_contribs = Vec::with_capacity(modules.len());
         for module in self.modules {
+            section_contribs.push(module.section_contrib.clone());
             let (res, names) = module.commit(sink, allocator)?;
             modules.push(res);
             files.push(names);
@@ -215,7 +211,7 @@ impl DbiBuilder {
             rbld: 0,
             modi_stream_size,
             sec_contr_stream_size: u16::default_encoded_size(()) as u32 * 2
-                + self.section_contribs.encoded_size(()) as u32,
+                + section_contribs.encoded_size(()) as u32,
             section_map_size: u16::default_encoded_size(()) as u32 * 2
                 + self.section_entries.encoded_size(()) as u32,
             file_info_size: (file_info_size + file_names_size) as u32,
@@ -236,9 +232,8 @@ impl DbiBuilder {
         codecs::padded_rem_list::encode(&modules, constants::ENDIANESS, &mut stream)?;
 
         // sec_contr_stream_size
-        // TODO this is duplicated with modules, should restructure builder
         SectionContribVersion::Ver60.encode(constants::ENDIANESS, &mut stream)?;
-        self.section_contribs.encode(((),), &mut stream)?;
+        section_contribs.encode(((),), &mut stream)?;
 
         // section_map_size
         let section_map_len = self.section_entries.len() as u16;
