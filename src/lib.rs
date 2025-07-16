@@ -298,7 +298,7 @@ record_index!(IdIndex);
 record_index!(TypeIndex);
 
 #[derive(Debug, Default, Encode, Decode, EncodedSize)]
-pub struct Guid(#[declio(with = "codecs::byte_array")] [u8; 16]);
+pub struct Guid(#[declio(with = "codecs::byte_array")] pub [u8; 16]);
 
 #[derive(Debug)]
 pub enum Integer {
