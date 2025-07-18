@@ -449,22 +449,34 @@ impl SymbolsBuilder {
     where
         S: io::Write + io::Seek,
     {
-        let mut globals_stream = DefaultMsfStreamWriter::new(sink)?;
-        Globals::from_symbols(&self.globals).write_with_header(&mut globals_stream)?;
-        let globals = allocator.allocate(globals_stream.finish()?);
+        let globals = if !self.globals.is_empty() {
+            let mut globals_stream = DefaultMsfStreamWriter::new(sink)?;
+            Globals::from_symbols(&self.globals).write_with_header(&mut globals_stream)?;
+            allocator.allocate(globals_stream.finish()?)
+        } else {
+            StreamIndex(u16::MAX)
+        };
 
-        let mut publics_stream = DefaultMsfStreamWriter::new(sink)?;
-        Publics::from_publics(&self.publics).write_with_header(&mut publics_stream)?;
-        let publics = allocator.allocate(publics_stream.finish()?);
+        let publics = if !self.publics.is_empty() {
+            let mut publics_stream = DefaultMsfStreamWriter::new(sink)?;
+            Publics::from_publics(&self.publics).write_with_header(&mut publics_stream)?;
+            allocator.allocate(publics_stream.finish()?)
+        } else {
+            StreamIndex(u16::MAX)
+        };
 
-        let mut syms_stream = DefaultMsfStreamWriter::new(sink)?;
-        for (_, sym) in self.publics {
-            PrefixedRecord(SymbolRecord::Public32(sym)).encode((), &mut syms_stream)?;
-        }
-        for (_, sym) in self.globals {
-            PrefixedRecord(sym).encode((), &mut syms_stream)?;
-        }
-        let symbols = allocator.allocate(syms_stream.finish()?);
+        let symbols = if !self.publics.is_empty() || !self.globals.is_empty() {
+            let mut syms_stream = DefaultMsfStreamWriter::new(sink)?;
+            for (_, sym) in self.publics {
+                PrefixedRecord(SymbolRecord::Public32(sym)).encode((), &mut syms_stream)?;
+            }
+            for (_, sym) in self.globals {
+                PrefixedRecord(sym).encode((), &mut syms_stream)?;
+            }
+            allocator.allocate(syms_stream.finish()?)
+        } else {
+            StreamIndex(u16::MAX)
+        };
 
         Ok(SymbolStreams {
             publics,
