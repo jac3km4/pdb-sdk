@@ -156,21 +156,20 @@ impl<'a, S, const BLOCK_SIZE: u32> MsfStreamWriter<'a, S, BLOCK_SIZE> {
             // skip two FPM blocks
             self.sink.write_all(EMPTY_BLOCK)?;
             self.sink.write_all(EMPTY_BLOCK)?;
-            BlockIndex(block_index + 1)
+            BlockIndex(block_index + 2)
         } else {
-            BlockIndex(block_index - 1)
+            BlockIndex(block_index)
         };
         self.blocks.push(cur_block);
         Ok(())
     }
 
-    pub fn finish(mut self) -> io::Result<MsfStreamLayout>
+    pub fn finish(self) -> io::Result<MsfStreamLayout>
     where
         S: io::Write + io::Seek,
     {
         let rem = BLOCK_SIZE - self.position % BLOCK_SIZE;
         self.sink.write_all(&EMPTY_BLOCK[..rem as usize])?;
-        self.advance_block()?;
 
         Ok(MsfStreamLayout::new(self.blocks, self.position))
     }
@@ -181,13 +180,14 @@ where
     W: io::Write + io::Seek,
 {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let rem = BLOCK_SIZE - self.position % BLOCK_SIZE;
-        let len = if rem == 0 && !buf.is_empty() {
+        let index_in_block = self.position % BLOCK_SIZE;
+        if index_in_block == 0 && !buf.is_empty() {
             self.advance_block()?;
-            BLOCK_SIZE.min(buf.len() as u32)
-        } else {
-            rem.min(buf.len() as u32)
-        };
+        }
+
+        let rem = BLOCK_SIZE - self.position % BLOCK_SIZE;
+        let len = rem.min(buf.len() as u32);
+
         let read = self.sink.write(&buf[..len as usize])?;
         self.position += read as u32;
         Ok(read)
