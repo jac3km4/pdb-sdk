@@ -8,6 +8,7 @@ use crate::{constants, BufMsfStream};
 
 pub(crate) const DEFAULT_BLOCK_SIZE: u32 = 4096;
 pub(crate) const EMPTY_BLOCK: &[u8] = &[0; DEFAULT_BLOCK_SIZE as usize];
+pub(crate) const FULL_BLOCK: &[u8] = &[0xff; DEFAULT_BLOCK_SIZE as usize];
 
 magic_bytes! {
     #[derive(Debug)]
@@ -154,8 +155,8 @@ impl<'a, S, const BLOCK_SIZE: u32> MsfStreamWriter<'a, S, BLOCK_SIZE> {
         let block_index = position as u32 / BLOCK_SIZE;
         let cur_block = if block_index % BLOCK_SIZE == 1 {
             // skip two FPM blocks
-            self.sink.write_all(EMPTY_BLOCK)?;
-            self.sink.write_all(EMPTY_BLOCK)?;
+            self.sink.write_all(FULL_BLOCK)?;
+            self.sink.write_all(FULL_BLOCK)?;
             BlockIndex(block_index + 2)
         } else {
             BlockIndex(block_index)
@@ -218,13 +219,14 @@ impl FreeBlockMap {
     where
         S: io::Write + io::Seek,
     {
+        // assumes every block in the file is used and unset each bit accordingly
         let layout = Self::layout(main);
         let mut bit = 0;
         for block in layout.blocks {
             sink.seek(io::SeekFrom::Start(block.to_file_pos(main.block_size)))?;
             let available = (main.num_blocks - bit).min(main.block_size * 8);
             for _ in 0..available / 8 {
-                sink.write_all(&[0xFF])?;
+                sink.write_all(&[0x00])?;
                 bit += 8;
             }
 
@@ -233,7 +235,7 @@ impl FreeBlockMap {
                 for i in 0..available % 8 {
                     byte |= 1 << i;
                 }
-                sink.write_all(&[byte])?;
+                sink.write_all(&[!byte])?;
                 break;
             }
         }

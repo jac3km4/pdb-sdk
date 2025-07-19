@@ -54,8 +54,8 @@ impl PdbBuilder {
         // superblock
         sink.write_all(EMPTY_BLOCK)?;
         // initial FPMs
-        sink.write_all(EMPTY_BLOCK)?;
-        sink.write_all(EMPTY_BLOCK)?;
+        sink.write_all(FULL_BLOCK)?;
+        sink.write_all(FULL_BLOCK)?;
 
         self.dbi.age = self.info.age;
 
