@@ -506,7 +506,7 @@ impl ModuleBuilder {
             symbols: vec![],
             debug_entries: vec![],
             source_files: vec![],
-            offset: 0,
+            offset: 4, // sizeof(DebugSectionSignature)
         }
     }
 
