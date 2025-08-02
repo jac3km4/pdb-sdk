@@ -90,6 +90,7 @@ pub enum SymbolRecord {
     LocalProcedureRef(ProcedureRef),
     #[declio(id = "constants::S_ENVBLOCK.into()")]
     EnvBlock {
+        reserved: u8,
         #[declio(with = "codecs::padded_rem_list")]
         fields: Vec<StrBuf>,
     },
