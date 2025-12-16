@@ -58,7 +58,7 @@ impl StringsBuilder {
                 let slot = (hash + i) % buckets;
                 match ids.get_mut(slot as usize) {
                     Some(el) if *el != 0 => {
-                        *el = offset as u32;
+                        *el = offset;
                         break;
                     }
                     _ => {}

@@ -3,12 +3,8 @@ use std::io;
 
 use declio::{Decode, Encode, EncodedSize};
 
-pub(crate) fn div_ceil(lhs: u32, rhs: u32) -> u32 {
-    (lhs + rhs - 1) / rhs
-}
-
 pub(crate) const fn align_to(val: usize, align: usize) -> usize {
-    (val + align - 1) / align * align
+    val.div_ceil(align) * align
 }
 
 #[derive(Debug, Default)]

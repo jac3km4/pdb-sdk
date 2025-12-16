@@ -90,15 +90,13 @@ fn main() -> Result<()> {
             arg_list: vec![arg.into()],
         });
 
-        let fn_type = tpi.add("func", TypeRecord::Procedure {
+        tpi.add("func", TypeRecord::Procedure {
             return_type: Some(0x74.try_into().unwrap()), // int
             calling_conv: CallingConvention::NearC,
             properties: FunctionProperties::new(),
             arg_count: 1,
             arg_list,
-        });
-
-        fn_type
+        })
     };
 
     let mut sym_builder = builder.dbi().symbols();

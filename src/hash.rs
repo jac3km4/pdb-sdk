@@ -1,7 +1,7 @@
 use declio::ctx::Len;
 use declio::{Decode, Encode};
 
-use crate::{constants, div_ceil};
+use crate::constants;
 
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
@@ -67,7 +67,7 @@ pub struct BitVector {
 
 impl BitVector {
     pub fn new_filled(n: u32) -> Self {
-        let words = div_ceil(n, 32);
+        let words = n.div_ceil(32);
         let bytes = words * 4;
         let mut this = Self {
             words,

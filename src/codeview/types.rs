@@ -7,7 +7,7 @@ use modular_bitfield::prelude::*;
 
 use crate::utils::StrBuf;
 use crate::{
-    codecs, constants, div_ceil, impl_bitfield_codecs, impl_bitfield_specifier_codecs, Guid, Integer, TypeIndex
+    codecs, constants, impl_bitfield_codecs, impl_bitfield_specifier_codecs, Guid, Integer, TypeIndex
 };
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
@@ -289,7 +289,7 @@ impl<Ctx: Copy> Decode<Ctx> for VftShape {
     {
         let count = u16::decode(constants::ENDIANESS, reader)?;
         let mut slots = Vec::with_capacity(count as usize);
-        for _ in 0..div_ceil(count.into(), 2) {
+        for _ in 0..count.div_ceil(2) {
             let byte = u8::decode(ctx, reader)?;
             let high = byte >> 4;
             slots.push(VFTableSlotKind::from_bytes(high).map_err(declio::Error::new)?);
@@ -313,7 +313,7 @@ impl<Ctx> Encode<Ctx> for VftShape {
 
 impl<Ctx> EncodedSize<Ctx> for VftShape {
     fn encoded_size(&self, _ctx: Ctx) -> usize {
-        u16::default_encoded_size(()) + div_ceil(self.slots.len() as u32, 2) as usize
+        u16::default_encoded_size(()) + self.slots.len().div_ceil(2)
     }
 }
 

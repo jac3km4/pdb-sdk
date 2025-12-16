@@ -3,7 +3,6 @@ use std::io::{self, Read};
 use declio::{magic_bytes, Decode, Encode, EncodedSize};
 
 use crate::result::Result;
-use crate::utils::div_ceil;
 use crate::{constants, BufMsfStream};
 
 pub(crate) const DEFAULT_BLOCK_SIZE: u32 = 4096;
@@ -33,7 +32,7 @@ impl SuperBlock {
     }
 
     pub fn block_map_blocks(&self) -> u32 {
-        div_ceil(self.num_dir_bytes, self.block_size)
+        self.num_dir_bytes.div_ceil(self.block_size)
     }
 }
 
@@ -204,8 +203,8 @@ pub(crate) struct FreeBlockMap(#[allow(unused)] Vec<u8>);
 
 impl FreeBlockMap {
     pub fn layout(main: &SuperBlock) -> MsfStreamLayout {
-        let intervals = div_ceil(main.num_blocks, 8 * main.block_size);
-        let byte_size = div_ceil(main.num_blocks, 8);
+        let intervals = main.num_blocks.div_ceil(8 * main.block_size);
+        let byte_size = main.num_blocks.div_ceil(8);
         let mut blocks = Vec::with_capacity(intervals as usize);
         let mut fpm_block = main.free_block_map_block;
         for _ in 0..intervals {
@@ -230,7 +229,7 @@ impl FreeBlockMap {
                 bit += 8;
             }
 
-            if available % 8 != 0 {
+            if !available.is_multiple_of(8) {
                 let mut byte = 0;
                 for i in 0..available % 8 {
                     byte |= 1 << i;

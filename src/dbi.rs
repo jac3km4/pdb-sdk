@@ -342,7 +342,7 @@ impl FrameDataStream {
     const ENTRY_SIZE: u32 = 32;
 
     pub(crate) fn read<R: io::Read + io::Seek>(mut reader: BufMsfStream<R>) -> Result<Self> {
-        if reader.get_ref().length() % Self::ENTRY_SIZE != 0 {
+        if !reader.get_ref().length().is_multiple_of(Self::ENTRY_SIZE) {
             // reloc_ptr
             u32::decode(constants::ENDIANESS, &mut reader)?;
         }

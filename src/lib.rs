@@ -13,7 +13,6 @@ use strings::Strings;
 use symbol_map::SymbolMap;
 use symbols::Symbols;
 use types::{IpiStream, TpiStream, TypeHash, TypeStream};
-use utils::div_ceil;
 
 pub mod builders;
 mod codecs;
@@ -55,7 +54,7 @@ where
             if byte_size == u32::MAX {
                 continue;
             }
-            let block_count = div_ceil(byte_size, super_block.block_size);
+            let block_count = byte_size.div_ceil(super_block.block_size);
             let blocks = Decode::decode(Len(block_count as usize), &mut reader)?;
             layouts.push(MsfStreamLayout::new(blocks, byte_size));
         }
