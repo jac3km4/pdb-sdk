@@ -3,7 +3,7 @@ use std::io;
 use declio::util::Bytes;
 use declio::{Decode, Encode, EncodedSize};
 use derive_getters::Getters;
-use modular_bitfield::BitfieldSpecifier;
+use modular_bitfield::Specifier;
 
 use crate::hash::Table;
 use crate::result::{Error, Result};
@@ -71,7 +71,7 @@ impl NamedStreams {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum PdbVersion {
     Vc2 = 19941610,
@@ -88,7 +88,7 @@ pub enum PdbVersion {
 
 impl_bitfield_specifier_codecs!(PdbVersion);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum PdbFeature {
     None = 0,

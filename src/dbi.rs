@@ -115,7 +115,7 @@ pub struct DbiHeader {
     pub reserved: [u8; 4],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum DbiVersion {
     Vc41 = 930803,
@@ -127,7 +127,7 @@ pub enum DbiVersion {
 
 impl_bitfield_specifier_codecs!(DbiVersion);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 #[repr(u32)]
 pub enum SectionContribVersion {
@@ -353,7 +353,7 @@ impl FrameDataStream {
     }
 }
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 16]
 pub enum MachineType {
     Invalid = 0xffff,

@@ -409,7 +409,7 @@ pub struct Procedure {
     pub name: StrBuf,
 }
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum ThunkOrdinal {
     Standard,
@@ -423,7 +423,7 @@ pub enum ThunkOrdinal {
 
 impl_bitfield_specifier_codecs!(ThunkOrdinal);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 16]
 pub enum TrampolineType {
     TrampIncremental,
@@ -432,7 +432,7 @@ pub enum TrampolineType {
 
 impl_bitfield_specifier_codecs!(TrampolineType);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum FrameCookie {
     Copy,
@@ -443,7 +443,7 @@ pub enum FrameCookie {
 
 impl_bitfield_specifier_codecs!(FrameCookie);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum SourceLanguage {
     C = 0x00,

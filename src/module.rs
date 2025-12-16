@@ -116,7 +116,7 @@ impl DebugSubsectionEntry {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum DebugSubsectionRecordType {
     Symbols = 0xf1,
@@ -209,7 +209,7 @@ pub struct FileChecksumEntry {
     pub bytes: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 8]
 pub enum ChecksumType {
     None,

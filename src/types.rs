@@ -4,7 +4,7 @@ use std::io::{self, Read};
 use declio::ctx::Len;
 use declio::{magic_bytes, Decode, Encode, EncodedSize};
 use derive_getters::Getters;
-use modular_bitfield::BitfieldSpecifier;
+use modular_bitfield::Specifier;
 
 use crate::codeview::types::{IdRecord, TypeRecord};
 use crate::codeview::PrefixedRecord;
@@ -207,7 +207,7 @@ impl EmbeddedBuf {
     }
 }
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 32]
 pub enum TypeStreamVersion {
     V40 = 19950410,

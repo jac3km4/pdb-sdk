@@ -337,7 +337,7 @@ pub struct PointerProperties {
 
 impl_bitfield_codecs!(PointerProperties);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 5]
 pub enum PointerKind {
     Near16 = 0x00,
@@ -357,7 +357,7 @@ pub enum PointerKind {
 
 impl_bitfield_specifier_codecs!(PointerKind);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 3]
 pub enum PointerMode {
     Vanilla = 0x00,
@@ -438,7 +438,7 @@ pub struct MemberProperties {
 
 impl_bitfield_codecs!(MemberProperties);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum CallingConvention {
     NearC = 0x00,
@@ -469,7 +469,7 @@ pub enum CallingConvention {
 
 impl_bitfield_specifier_codecs!(CallingConvention);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 16]
 pub enum LabelType {
     Near = 0x0,
@@ -478,7 +478,7 @@ pub enum LabelType {
 
 impl_bitfield_specifier_codecs!(LabelType);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 4]
 pub enum VFTableSlotKind {
     Near16 = 0x00,
@@ -492,7 +492,7 @@ pub enum VFTableSlotKind {
 
 impl_bitfield_specifier_codecs!(VFTableSlotKind);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 2]
 pub enum MemberAccess {
     None = 0,
@@ -503,7 +503,7 @@ pub enum MemberAccess {
 
 impl_bitfield_specifier_codecs!(MemberAccess);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 3]
 pub enum MethodKind {
     Vanilla = 0x00,
@@ -523,7 +523,7 @@ impl MethodKind {
 
 impl_bitfield_specifier_codecs!(MethodKind);
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 32]
 pub enum BuiltinType {
     Void = 0x0003,

@@ -2,7 +2,7 @@ use std::io::Write;
 
 use declio::util::{Bytes, PrefixVec};
 use declio::{magic_bytes, Decode, Encode, EncodedSize};
-use modular_bitfield::BitfieldSpecifier;
+use modular_bitfield::Specifier;
 
 use crate::hash::hash_v1;
 use crate::result::Result;
@@ -85,7 +85,7 @@ impl Default for StringsBuilder {
     }
 }
 
-#[derive(Debug, Clone, Copy, BitfieldSpecifier)]
+#[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 32]
 enum HashVersion {
     V1 = 1,

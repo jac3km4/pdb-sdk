@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 thiserror = "1.0"
 derive-getters = "0.2"
-modular-bitfield = "0.11"
+modular-bitfield = "0.13"
 
 [dependencies.declio]
 git = "https://github.com/jac3km4/declio.git"
