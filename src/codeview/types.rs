@@ -244,7 +244,6 @@ pub struct EnumRecord {
     pub properties: ClassProperties,
     pub underlying_type: TypeIndex,
     pub field_list: TypeIndex,
-    pub size: Integer,
     pub name: StrBuf,
     #[declio(skip_if = "!properties.has_unique_name()")]
     pub unique_name: StrBuf,
