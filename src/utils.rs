@@ -16,6 +16,24 @@ impl StrBuf {
     }
 }
 
+impl From<&str> for StrBuf {
+    fn from(s: &str) -> Self {
+        Self(s.into())
+    }
+}
+
+impl From<&String> for StrBuf {
+    fn from(s: &String) -> Self {
+        Self(s.as_str().into())
+    }
+}
+
+impl From<String> for StrBuf {
+    fn from(s: String) -> Self {
+        Self(s.into())
+    }
+}
+
 impl AsRef<str> for StrBuf {
     #[inline]
     fn as_ref(&self) -> &str {

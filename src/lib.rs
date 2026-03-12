@@ -310,6 +310,54 @@ pub enum Integer {
     U64(u64),
 }
 
+impl Integer {
+    /// Create an Integer from an unsigned value, using smallest encoding
+    pub fn from_unsigned(val: u64) -> Self {
+        if val <= u16::MAX as u64 {
+            Integer::U16(val as u16)
+        } else if val <= u32::MAX as u64 {
+            Integer::U32(val as u32)
+        } else {
+            Integer::U64(val)
+        }
+    }
+
+    /// Create an Integer from a signed value, using smallest encoding
+    pub fn from_signed(val: i64) -> Self {
+        if val >= i16::MIN as i64 && val <= i16::MAX as i64 {
+            Integer::I16(val as i16)
+        } else if val >= i32::MIN as i64 && val <= i32::MAX as i64 {
+            Integer::I32(val as i32)
+        } else {
+            Integer::I64(val)
+        }
+    }
+}
+
+impl From<usize> for Integer {
+    fn from(val: usize) -> Self {
+        Integer::from_unsigned(val as u64)
+    }
+}
+
+impl From<u32> for Integer {
+    fn from(val: u32) -> Self {
+        Integer::from_unsigned(val as u64)
+    }
+}
+
+impl From<u64> for Integer {
+    fn from(val: u64) -> Self {
+        Integer::from_unsigned(val)
+    }
+}
+
+impl From<i64> for Integer {
+    fn from(val: i64) -> Self {
+        Integer::from_signed(val)
+    }
+}
+
 impl<Ctx: Copy> Decode<Ctx> for Integer {
     fn decode<R>(_ctx: Ctx, reader: &mut R) -> Result<Self, declio::Error>
     where
