@@ -9,18 +9,23 @@ use crate::utils::StrBuf;
 use crate::{
     codecs, constants, impl_bitfield_codecs, impl_bitfield_specifier_codecs, IdIndex, Integer, SymbolOffset, TypeIndex
 };
-
+/// CodeView Symbol Record, representing various symbols (e.g., procedures, locals, labels).
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS", id_type = "LittleEndian<u16>")]
 pub enum SymbolRecord {
+    /// List of inlinees.
     #[declio(id = "constants::S_INLINEES.into()")]
     Inlinees,
+    /// End of a scope (e.g., procedure, block).
     #[declio(id = "constants::S_END.into()")]
     ScopeEnd,
+    /// End of an inline site.
     #[declio(id = "constants::S_INLINESITE_END.into()")]
     InlineSiteEnd,
+    /// End of a procedure.
     #[declio(id = "constants::S_PROC_ID_END.into()")]
     ProcEnd,
+    /// A thunk symbol.
     #[declio(id = "constants::S_THUNK32.into()")]
     Thunk32 {
         #[declio(with = "codecs::optional_index")]
@@ -33,6 +38,7 @@ pub enum SymbolRecord {
         ordinal: ThunkOrdinal,
         name: StrBuf,
     },
+    /// A trampoline symbol.
     #[declio(id = "constants::S_TRAMPOLINE.into()")]
     Trampoline {
         trampoline_type: TrampolineType,
@@ -42,6 +48,7 @@ pub enum SymbolRecord {
         thunk_section: u16,
         target_section: u16,
     },
+    /// A section symbol.
     #[declio(id = "constants::S_SECTION.into()")]
     Section {
         section_number: u16,
@@ -51,6 +58,7 @@ pub enum SymbolRecord {
         characteristics: u32,
         name: StrBuf,
     },
+    /// A COFF group symbol.
     #[declio(id = "constants::S_COFFGROUP.into()")]
     CoffGroup {
         size: u32,
@@ -58,42 +66,55 @@ pub enum SymbolRecord {
         offset: DataRegionOffset,
         name: StrBuf,
     },
+    /// An exported symbol.
     #[declio(id = "constants::S_EXPORT.into()")]
     Export {
         ordinal: u16,
         properties: ExportProperties,
         name: StrBuf,
     },
+    /// A local procedure.
     #[declio(id = "constants::S_LPROC32.into()")]
     Proc(Procedure),
+    /// A global procedure.
     #[declio(id = "constants::S_GPROC32.into()")]
     GlobalProc(Procedure),
+    /// A local procedure ID.
     #[declio(id = "constants::S_LPROC32_ID.into()")]
     ProcId(Procedure),
+    /// A global procedure ID.
     #[declio(id = "constants::S_GPROC32_ID.into()")]
     GlobalProcId(Procedure),
+    /// A DPC procedure.
     #[declio(id = "constants::S_LPROC32_DPC.into()")]
     DPCProc(Procedure),
+    /// A DPC procedure ID.
     #[declio(id = "constants::S_LPROC32_DPC_ID.into()")]
     DPCProcId(Procedure),
+    /// A variable stored in a register.
     #[declio(id = "constants::S_REGISTER.into()")]
     Register {
         contained_type: TypeIndex,
         register: Register,
         name: StrBuf,
     },
+    /// A public symbol (often maps to a mangled name).
     #[declio(id = "constants::S_PUB32.into()")]
     Public32(Public),
+    /// A reference to a global procedure.
     #[declio(id = "constants::S_PROCREF.into()")]
     ProcedureRef(ProcedureRef),
+    /// A reference to a local procedure.
     #[declio(id = "constants::S_LPROCREF.into()")]
     LocalProcedureRef(ProcedureRef),
+    /// An environment block.
     #[declio(id = "constants::S_ENVBLOCK.into()")]
     EnvBlock {
         reserved: u8,
         #[declio(with = "codecs::padded_rem_list")]
         fields: Vec<StrBuf>,
     },
+    /// An inline site.
     #[declio(id = "constants::S_INLINESITE.into()")]
     InlineSite {
         #[declio(with = "codecs::optional_index")]
@@ -102,12 +123,14 @@ pub enum SymbolRecord {
         inlinee: IdIndex,
         annotations: (), // TODO
     },
+    /// A local variable or parameter.
     #[declio(id = "constants::S_LOCAL.into()")]
     Local {
         local_type: TypeIndex,
         properties: LocalProperties,
         name: StrBuf,
     },
+    /// A definition range for a local variable.
     #[declio(id = "constants::S_DEFRANGE.into()")]
     DefRange {
         program: u32,
@@ -115,6 +138,7 @@ pub enum SymbolRecord {
         #[declio(with = "codecs::padded_rem_list")]
         gaps: Vec<LocalVariableGap>,
     },
+    /// A definition range for a subfield.
     #[declio(id = "constants::S_DEFRANGE_SUBFIELD.into()")]
     DefRangeSubfield {
         program: u32,
@@ -123,6 +147,7 @@ pub enum SymbolRecord {
         #[declio(with = "codecs::padded_rem_list")]
         gaps: Vec<LocalVariableGap>,
     },
+    /// A definition range using a register.
     #[declio(id = "constants::S_DEFRANGE_REGISTER.into()")]
     DefRangeRegister {
         register: Register,
@@ -131,6 +156,7 @@ pub enum SymbolRecord {
         #[declio(with = "codecs::padded_rem_list")]
         gaps: Vec<LocalVariableGap>,
     },
+    /// A frame-pointer-relative definition range.
     #[declio(id = "constants::S_DEFRANGE_FRAMEPOINTER_REL.into()")]
     DefRangeFramePointerRel {
         offset: i32,
@@ -138,6 +164,7 @@ pub enum SymbolRecord {
         #[declio(with = "codecs::padded_rem_list")]
         gaps: Vec<LocalVariableGap>,
     },
+    /// A register definition range for a subfield.
     #[declio(id = "constants::S_DEFRANGE_SUBFIELD_REGISTER.into()")]
     DefRangeSubfieldRegister {
         register: Register,
@@ -147,8 +174,10 @@ pub enum SymbolRecord {
         #[declio(with = "codecs::padded_rem_list")]
         gaps: Vec<LocalVariableGap>,
     },
+    /// A frame-pointer-relative definition range spanning the full scope.
     #[declio(id = "constants::S_DEFRANGE_FRAMEPOINTER_REL_FULL_SCOPE.into()")]
     DefRangeFramePointerRelFullScope { offset: i32 },
+    /// A register-relative definition range.
     #[declio(id = "constants::S_DEFRANGE_REGISTER_REL.into()")]
     DefRangeRegisterRel {
         register: Register,
@@ -158,6 +187,7 @@ pub enum SymbolRecord {
         #[declio(with = "codecs::padded_rem_list")]
         gaps: Vec<LocalVariableGap>,
     },
+    /// A block scope.
     #[declio(id = "constants::S_BLOCK32.into()")]
     Block {
         parent: SymbolOffset,
@@ -166,14 +196,17 @@ pub enum SymbolRecord {
         code_offset: DataRegionOffset,
         name: StrBuf,
     },
+    /// A label symbol.
     #[declio(id = "constants::S_LABEL32.into()")]
     Label {
         code_offset: DataRegionOffset,
         properties: ProcedureProperties,
         name: StrBuf,
     },
+    /// The name of an object file.
     #[declio(id = "constants::S_OBJNAME.into()")]
     ObjectName { signature: u32, name: StrBuf },
+    /// Compiler version information (older format).
     #[declio(id = "constants::S_COMPILE2.into()")]
     Compile2 {
         properties: CompileProperties,
@@ -184,6 +217,7 @@ pub enum SymbolRecord {
         #[declio(with = "codecs::padded_rem_list")]
         extra_settings: Vec<StrBuf>,
     },
+    /// Compiler version information (newer format).
     #[declio(id = "constants::S_COMPILE3.into()")]
     Compile3 {
         properties: CompileProperties,
@@ -194,6 +228,7 @@ pub enum SymbolRecord {
         backend_qfe: u16,
         version: StrBuf,
     },
+    /// Extra frame and procedure information.
     #[declio(id = "constants::S_FRAMEPROC.into()")]
     FrameProcedure {
         total_frame_bytes: u32,
@@ -204,11 +239,13 @@ pub enum SymbolRecord {
         section_id_of_exception_handler: u16,
         properties: FrameProcedureProperties,
     },
+    /// Information about a call site.
     #[declio(id = "constants::S_CALLSITEINFO.into()")]
     CallSiteInfo {
         code_offset: DataRegionOffset,
         call_type: TypeIndex,
     },
+    /// A file-static variable.
     #[declio(id = "constants::S_FILESTATIC.into()")]
     FileStatic {
         index: TypeIndex,
@@ -216,12 +253,14 @@ pub enum SymbolRecord {
         properties: LocalProperties,
         name: StrBuf,
     },
+    /// Information about a heap allocation site.
     #[declio(id = "constants::S_HEAPALLOCSITE.into()")]
     HeapAllocationSite {
         code_offset: DataRegionOffset,
         call_instruction_size: u16,
         call_type: TypeIndex,
     },
+    /// A frame cookie.
     #[declio(id = "constants::S_FRAMECOOKIE.into()")]
     FrameCookie {
         code_offset: u32,
@@ -229,25 +268,32 @@ pub enum SymbolRecord {
         kind: FrameCookie,
         flags: u8,
     },
+    /// Lists the callers of a procedure.
     #[declio(id = "constants::S_CALLEES.into()")]
     Caller {
         #[declio(with = "codecs::padded_rem_list")]
         types: Vec<TypeIndex>,
     },
+    /// Lists the callees of a procedure.
     #[declio(id = "constants::S_CALLERS.into()")]
     Callee,
+    /// A user-defined type (UDT) symbol.
     #[declio(id = "constants::S_UDT.into()")]
     Udt(UserDefinedType),
+    /// A COBOL user-defined type symbol.
     #[declio(id = "constants::S_COBOLUDT.into()")]
     CobolUdt(UserDefinedType),
+    /// Build information symbol.
     #[declio(id = "constants::S_BUILDINFO.into()")]
     BuildInfo { build_record: IdIndex },
+    /// A variable located relative to the base pointer.
     #[declio(id = "constants::S_BPREL32.into()")]
     BasePointerRelative {
         offset: i32,
         value_type: TypeIndex,
         name: StrBuf,
     },
+    /// A variable located relative to a register.
     #[declio(id = "constants::S_REGREL32.into()")]
     RegisterRelative {
         offset: u32,
@@ -255,24 +301,34 @@ pub enum SymbolRecord {
         register: Register,
         name: StrBuf,
     },
+    /// A constant symbol.
     #[declio(id = "constants::S_CONSTANT.into()")]
     Constant(Constant),
+    /// A managed constant symbol.
     #[declio(id = "constants::S_MANCONSTANT.into()")]
     ManagedConstant(Constant),
+    /// Local data symbol.
     #[declio(id = "constants::S_LDATA32.into()")]
     Data(Data),
+    /// Global data symbol.
     #[declio(id = "constants::S_GDATA32.into()")]
     GlobalData(Data),
+    /// Managed local data symbol.
     #[declio(id = "constants::S_LMANDATA.into()")]
     ManagedLocalData(Data),
+    /// Managed global data symbol.
     #[declio(id = "constants::S_GMANDATA.into()")]
     ManagedGlobalData(Data),
+    /// Thread local storage symbol.
     #[declio(id = "constants::S_LTHREAD32.into()")]
     ThreadLocalStorage(ThreadLocalStorage),
+    /// Global thread local storage symbol.
     #[declio(id = "constants::S_GTHREAD32.into()")]
     GlobalThreadLocalStorage(ThreadLocalStorage),
+    /// A using namespace symbol.
     #[declio(id = "constants::S_UNAMESPACE.into()")]
     UsingNamespace { name: StrBuf },
+    /// An annotation symbol.
     #[declio(id = "constants::S_ANNOTATION.into()")]
     Annotation {
         code_offset: DataRegionOffset,
@@ -320,7 +376,7 @@ impl SymbolRecord {
         }
     }
 }
-
+/// Range where a local variable is valid.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct LocalVariableRange {
@@ -328,14 +384,14 @@ pub struct LocalVariableRange {
     pub i_sect_start: u16,
     pub range: u16,
 }
-
+/// Gap in a local variable's valid range.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct LocalVariableGap {
     pub gap_start_offset: u16,
     pub range: u16,
 }
-
+/// Version information (major, minor, build).
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct Version {
@@ -343,7 +399,7 @@ pub struct Version {
     pub minor: u16,
     pub build: u16,
 }
-
+/// Record describing a public symbol.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct Public {
@@ -351,14 +407,14 @@ pub struct Public {
     pub offset: DataRegionOffset,
     pub name: StrBuf,
 }
-
+/// Record describing a user-defined type (UDT).
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct UserDefinedType {
     pub udt_type: TypeIndex,
     pub name: StrBuf,
 }
-
+/// Record describing a constant value.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct Constant {
@@ -366,7 +422,7 @@ pub struct Constant {
     pub value: Integer,
     pub name: StrBuf,
 }
-
+/// Record describing a data symbol.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct Data {
@@ -374,7 +430,7 @@ pub struct Data {
     pub offset: DataRegionOffset,
     pub name: StrBuf,
 }
-
+/// Record describing thread-local storage.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct ThreadLocalStorage {
@@ -382,7 +438,7 @@ pub struct ThreadLocalStorage {
     pub offset: DataRegionOffset,
     pub name: StrBuf,
 }
-
+/// Reference to a procedure in another module.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct ProcedureRef {
@@ -391,7 +447,7 @@ pub struct ProcedureRef {
     pub module: u16,
     pub name: StrBuf,
 }
-
+/// Record describing a procedure.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct Procedure {
@@ -408,7 +464,7 @@ pub struct Procedure {
     pub properties: ProcedureProperties,
     pub name: StrBuf,
 }
-
+/// Types of thunks.
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum ThunkOrdinal {
@@ -422,7 +478,7 @@ pub enum ThunkOrdinal {
 }
 
 impl_bitfield_specifier_codecs!(ThunkOrdinal);
-
+/// Types of trampolines.
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 16]
 pub enum TrampolineType {
@@ -431,7 +487,7 @@ pub enum TrampolineType {
 }
 
 impl_bitfield_specifier_codecs!(TrampolineType);
-
+/// Types of frame cookies.
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum FrameCookie {
@@ -442,7 +498,7 @@ pub enum FrameCookie {
 }
 
 impl_bitfield_specifier_codecs!(FrameCookie);
-
+/// Source language of the module.
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum SourceLanguage {
@@ -469,7 +525,7 @@ pub enum SourceLanguage {
 }
 
 impl_bitfield_specifier_codecs!(SourceLanguage);
-
+/// Properties of a local variable.
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]
 pub struct LocalProperties {
@@ -489,7 +545,7 @@ pub struct LocalProperties {
 }
 
 impl_bitfield_codecs!(LocalProperties);
-
+/// Properties of a public symbol.
 #[bitfield(bits = 32)]
 #[derive(Debug, Clone, Copy)]
 pub struct PublicProperties {
@@ -502,7 +558,7 @@ pub struct PublicProperties {
 }
 
 impl_bitfield_codecs!(PublicProperties);
-
+/// Properties of a procedure.
 #[bitfield(bits = 8)]
 #[derive(Debug, Clone, Copy)]
 pub struct ProcedureProperties {
@@ -517,7 +573,7 @@ pub struct ProcedureProperties {
 }
 
 impl_bitfield_codecs!(ProcedureProperties);
-
+/// Properties of the compilation.
 #[bitfield(bits = 32)]
 #[derive(Debug, Clone, Copy)]
 pub struct CompileProperties {
@@ -539,7 +595,7 @@ pub struct CompileProperties {
 }
 
 impl_bitfield_codecs!(CompileProperties);
-
+/// Properties of an exported symbol.
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]
 pub struct ExportProperties {
@@ -554,7 +610,7 @@ pub struct ExportProperties {
 }
 
 impl_bitfield_codecs!(ExportProperties);
-
+/// Properties of a register-relative definition range.
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]
 pub struct DefRangeRegisterRelProperties {
@@ -565,7 +621,7 @@ pub struct DefRangeRegisterRelProperties {
 }
 
 impl_bitfield_codecs!(DefRangeRegisterRelProperties);
-
+/// Properties of a frame procedure.
 #[bitfield(bits = 32)]
 #[derive(Debug, Clone, Copy)]
 pub struct FrameProcedureProperties {
