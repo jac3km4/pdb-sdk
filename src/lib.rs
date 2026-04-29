@@ -31,6 +31,8 @@ pub mod symbols;
 pub mod types;
 pub mod utils;
 
+/// An MSF (Multi-Stream Format) container file representing a PDB file.
+/// It contains multiple streams which can represent arbitrary data, such as the PDB Info Stream, TPI/IPI Streams, DBI Stream, etc.
 #[derive(Debug)]
 pub struct PdbFile<R> {
     inner: R,
@@ -42,6 +44,7 @@ impl<R> PdbFile<R>
 where
     R: io::Read + io::Seek,
 {
+    /// Opens a PDB file from a reader and parses its MSF directory layout.
     pub fn open(mut reader: R) -> Result<Self> {
         let super_block = SuperBlock::decode((), &mut reader)?;
         let dir_layout = Self::get_dir_layout(&mut reader, &super_block)?;
@@ -83,6 +86,7 @@ where
         Ok(MsfStreamLayout::new(blocks, super_block.num_dir_bytes))
     }
 
+    /// Reads the PDB Info Stream.
     pub fn get_info(&mut self) -> Result<PdbInfo> {
         let stream = self
             .get_stream(BuiltinStream::Pdb)
@@ -90,6 +94,7 @@ where
         PdbInfo::read(stream)
     }
 
+    /// Reads the global string table (`/names` stream).
     pub fn get_strings(&mut self, info: &PdbInfo) -> Result<Strings> {
         let index = info
             .named_streams()
@@ -101,6 +106,7 @@ where
         Ok(Strings::decode((), &mut stream)?)
     }
 
+    /// Reads the Debug Info (DBI) Stream.
     pub fn get_dbi(&mut self) -> Result<DbiStream> {
         let stream = self
             .get_stream(BuiltinStream::Dbi)
@@ -108,6 +114,7 @@ where
         DbiStream::read(stream)
     }
 
+    /// Reads the Type Info (TPI) Stream, containing CodeView type records.
     pub fn get_tpi(&mut self) -> Result<TpiStream> {
         let stream = self
             .get_stream(BuiltinStream::Tpi)
@@ -115,6 +122,7 @@ where
         TypeStream::read(stream)
     }
 
+    /// Reads the TPI hash stream for accelerated type lookups.
     pub fn get_tpi_hash<A>(&mut self, tpi: &TypeStream<A>) -> Result<TypeHash> {
         let hash_stream = self
             .get_indexed_stream(tpi.header().hash_stream_index)
@@ -122,6 +130,7 @@ where
         TypeHash::read(hash_stream, &tpi.header().hash_layout)
     }
 
+    /// Reads the ID Info (IPI) Stream, containing CodeView ID records.
     pub fn get_ipi(&mut self) -> Result<IpiStream> {
         let stream = self
             .get_stream(BuiltinStream::Ipi)
@@ -129,6 +138,7 @@ where
         TypeStream::read(stream)
     }
 
+    /// Reads the Public Symbol Stream, containing public (exported) symbol records.
     pub fn get_publics(&mut self, dbi: &DbiStream) -> Result<Publics> {
         let stream = self
             .get_indexed_stream(dbi.header().public_symbol_stream_index)
@@ -136,6 +146,7 @@ where
         Publics::read_with_header(stream)
     }
 
+    /// Reads the Global Symbol Stream, containing a single combined symbol table.
     pub fn get_globals(&mut self, dbi: &DbiStream) -> Result<SymbolMap> {
         let stream = self
             .get_indexed_stream(dbi.header().global_symbol_stream_index)
@@ -143,6 +154,7 @@ where
         SymbolMap::read_with_header(stream)
     }
 
+    /// Reads the main symbol record stream referenced by the DBI stream.
     pub fn get_symbols(&mut self, dbi: &DbiStream) -> Result<Symbols> {
         let stream = self
             .get_indexed_stream(dbi.header().sym_record_stream_index)
@@ -150,6 +162,7 @@ where
         Symbols::read(stream)
     }
 
+    /// Reads the Section Header Stream.
     pub fn get_section_headers(&mut self, dbi: &DbiStream) -> Result<SectionHeaderStream> {
         let index = dbi
             .dbg_streams()
@@ -161,6 +174,7 @@ where
         SectionHeaderStream::read(stream)
     }
 
+    /// Reads the Frame Data Stream (New FPO data).
     pub fn get_frame_data(&mut self, dbi: &DbiStream) -> Result<FrameDataStream> {
         let index = dbi
             .dbg_streams()
@@ -172,6 +186,7 @@ where
         FrameDataStream::read(stream)
     }
 
+    /// Reads the FPO Data Stream.
     pub fn get_fpo(&mut self, dbi: &DbiStream) -> Result<FpoStream> {
         let index = dbi
             .dbg_streams()
@@ -183,6 +198,7 @@ where
         FpoStream::read(stream)
     }
 
+    /// Reads a Module Information Stream for a specific compiland, containing its symbols and line info.
     pub fn get_module(&mut self, module: &DbiModule) -> Result<Module> {
         let stream = self
             .get_indexed_stream(module.header.debug_info_stream)
@@ -220,10 +236,12 @@ enum DbgHeader {
     Max,
 }
 
+/// An offset into a string table.
 #[derive(Debug, Clone, Copy, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct StringOffset(u32);
 
+/// Error indicating a type or ID index was zero.
 #[derive(Debug)]
 pub struct IndexIsZero;
 
@@ -277,6 +295,7 @@ macro_rules! record_index {
     };
 }
 
+/// An offset indicating the position of a symbol record within its stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Decode, Encode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SymbolOffset(pub(crate) u32);
@@ -296,9 +315,12 @@ impl From<SymbolOffset> for u32 {
 record_index!(IdIndex);
 record_index!(TypeIndex);
 
+/// A 128-bit identifier guaranteed to be unique across space and time. Used to match a PDB to its corresponding executable.
 #[derive(Debug, Default, Encode, Decode, EncodedSize)]
 pub struct Guid(#[declio(with = "codecs::byte_array")] pub [u8; 16]);
 
+/// Represents an integer value encoded in the smallest possible numeric leaf type.
+/// Used in CodeView type records.
 #[derive(Debug)]
 pub enum Integer {
     I16(i16),
