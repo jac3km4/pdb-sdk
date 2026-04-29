@@ -25,9 +25,13 @@ magic_bytes! {
     pub HashBucketNumber(&HASH_BUCKET_NUMBER.to_le_bytes());
 }
 
+/// The PDB TPI Stream, containing CodeView Type Records.
 pub type TpiStream = TypeStream<TypeRecord>;
+/// The PDB IPI Stream, containing CodeView ID Records.
 pub type IpiStream = TypeStream<IdRecord>;
 
+/// Represents the TPI or IPI stream, containing information about types or IDs.
+/// It contains a header followed by a list of CodeView records.
 #[derive(Debug, Getters)]
 pub struct TypeStream<A> {
     header: TypeStreamHeader,
@@ -57,6 +61,7 @@ impl<A> TypeStream<A> {
 }
 
 impl TypeStream<TypeRecord> {
+    /// Retrieves a type or ID record by its index.
     pub fn record(&self, idx: TypeIndex) -> Option<&TypeRecord> {
         self.records
             .get((u32::from(idx) - FIRST_NON_BUILTIN_TYPE) as usize)
@@ -64,12 +69,14 @@ impl TypeStream<TypeRecord> {
 }
 
 impl TypeStream<IdRecord> {
+    /// Retrieves a type or ID record by its index.
     pub fn record(&self, idx: IdIndex) -> Option<&IdRecord> {
         self.records
             .get((u32::from(idx) - FIRST_NON_BUILTIN_TYPE) as usize)
     }
 }
 
+/// The header of a TPI or IPI stream.
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct TypeStreamHeader {
@@ -111,6 +118,7 @@ impl TypeStreamHeader {
     }
 }
 
+/// The layout of the TPI/IPI Hash Stream.
 #[derive(Debug, Encode, Decode)]
 pub struct TypeHashLayout {
     hash_values: EmbeddedBuf,
@@ -118,6 +126,7 @@ pub struct TypeHashLayout {
     hash_adjusters: EmbeddedBuf,
 }
 
+/// The TPI/IPI Hash Stream, providing accelerated O(log(n)) lookup by type index.
 #[derive(Debug)]
 pub struct TypeHash {
     pub(crate) hash_values: Vec<u32>,
@@ -126,6 +135,7 @@ pub struct TypeHash {
 }
 
 impl TypeHash {
+    /// Gets the type index for a given name using the hash stream.
     pub fn get_index(&self, name: &str) -> Option<TypeIndex> {
         let hash = hash_v1(name.as_bytes()) % HASH_BUCKET_NUMBER;
         let i = self.hash_values.iter().position(|&i| i == hash)?;
@@ -207,6 +217,7 @@ impl EmbeddedBuf {
     }
 }
 
+/// The version of the TPI/IPI stream.
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 32]
 pub enum TypeStreamVersion {

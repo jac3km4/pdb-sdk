@@ -17,6 +17,8 @@ magic_bytes! {
     DebugSectionSignature(&0x4u32.to_le_bytes());
 }
 
+/// The Module Information Stream.
+/// Contains information about a single module (object file, import library, etc) that contributes to the binary. Includes line info and CodeView information for symbols.
 #[derive(Debug, Getters)]
 pub struct Module {
     symbols: Vec<SymbolRecord>,
@@ -26,6 +28,7 @@ pub struct Module {
 }
 
 impl Module {
+    /// Creates a new Module.
     pub fn new(symbols: Vec<SymbolRecord>, debug_entries: Vec<DebugSubsectionEntry>) -> Self {
         Self {
             symbols,
@@ -93,6 +96,7 @@ impl Module {
     }
 }
 
+/// The layout of a Module Information Stream.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct ModuleLayout {
@@ -101,6 +105,7 @@ pub struct ModuleLayout {
     c13_bytes: u32,
 }
 
+/// An entry in a Debug Subsection.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct DebugSubsectionEntry {
@@ -110,12 +115,14 @@ pub struct DebugSubsectionEntry {
 }
 
 impl DebugSubsectionEntry {
+    /// Decodes the Debug Subsection Entry into a DebugSubsectionRecord.
     pub fn decoded(&self) -> Result<DebugSubsectionRecord> {
         let ctx = self.record_type;
         Ok(DebugSubsectionRecord::decode(ctx, &mut &self.data[..])?)
     }
 }
 
+/// The type of a Debug Subsection Record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum DebugSubsectionRecordType {
@@ -136,6 +143,7 @@ pub enum DebugSubsectionRecordType {
 
 impl_bitfield_specifier_codecs!(DebugSubsectionRecordType);
 
+/// A Debug Subsection Record.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx = "record_type: DebugSubsectionRecordType", id_expr = "record_type")]
 pub enum DebugSubsectionRecord {
@@ -155,6 +163,7 @@ pub enum DebugSubsectionRecord {
     },
 }
 
+/// The header for a line fragment.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct LineFragmentHeader {
@@ -163,6 +172,7 @@ pub struct LineFragmentHeader {
     pub code_size: u32,
 }
 
+/// An entry containing line and column number information.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx = "flags: LineFlags, endian: Endian")]
 pub struct LineColumnEntry {
@@ -175,6 +185,7 @@ pub struct LineColumnEntry {
     pub columns: Vec<ColumnNumberEntry>,
 }
 
+/// Flags for line number entries.
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]
 pub struct LineFlags {
@@ -185,6 +196,7 @@ pub struct LineFlags {
 
 impl_bitfield_codecs!(LineFlags);
 
+/// A line number entry.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct LineNumberEntry {
@@ -192,6 +204,7 @@ pub struct LineNumberEntry {
     pub flags: u32,
 }
 
+/// A column number entry.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct ColumnNumberEntry {
@@ -199,6 +212,7 @@ pub struct ColumnNumberEntry {
     pub end_col: u16,
 }
 
+/// An entry in the file checksums subsection.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FileChecksumEntry {
@@ -209,6 +223,7 @@ pub struct FileChecksumEntry {
     pub bytes: Vec<u8>,
 }
 
+/// The type of checksum used for a file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 8]
 pub enum ChecksumType {

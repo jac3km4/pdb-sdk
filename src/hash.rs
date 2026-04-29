@@ -44,6 +44,7 @@ impl Default for Table {
     }
 }
 
+/// A key-value pair in a PDB Serialized Hash Table. The key is always a uint32.
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct KeyVal {
@@ -52,11 +53,13 @@ pub struct KeyVal {
 }
 
 impl KeyVal {
+    /// Creates a new key-value pair.
     pub fn new(key: u32, val: u32) -> Self {
         Self { key, val }
     }
 }
 
+/// A serialized bit vector indicating the status (e.g. present or deleted) of buckets in a hash table.
 #[derive(Debug, Default, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct BitVector {
@@ -66,6 +69,7 @@ pub struct BitVector {
 }
 
 impl BitVector {
+    /// Creates a new filled bit vector.
     pub fn new_filled(n: u32) -> Self {
         let words = n.div_ceil(32);
         let bytes = words * 4;
@@ -79,17 +83,20 @@ impl BitVector {
         this
     }
 
+/// Gets the bit at the specified index.
     #[allow(unused)]
     pub fn get(&self, n: usize) -> Option<bool> {
         let elem = self.buf.get(n / 8)?;
         Some(*elem & (1 << (n % 8)) != 0)
     }
 
+    /// Sets the bit at the specified index.
     pub fn set(&mut self, n: usize) {
         let elem = self.buf.get_mut(n / 8).unwrap();
         *elem |= 1 << (n % 8);
     }
 
+/// Counts the number of ones in the bit vector.
     #[allow(unused)]
     pub fn count_ones(&self) -> u32 {
         self.buf.iter().map(|b| b.count_ones()).sum()

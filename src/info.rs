@@ -16,6 +16,8 @@ const SUPPORTED_VERSIOMS: &[PdbVersion] = &[
     PdbVersion::Vc140,
 ];
 
+/// The PDB Info Stream (aka the PDB Stream).
+/// It contains basic file information, the named stream map, and features to match the PDB to its executable.
 #[derive(Debug, Getters)]
 pub struct PdbInfo {
     header: PdbInfoHeader,
@@ -24,6 +26,7 @@ pub struct PdbInfo {
 }
 
 impl PdbInfo {
+    /// Reads the PDB Info Stream from a reader.
     pub fn read<R: io::Read>(mut reader: R) -> Result<Self> {
         let header = PdbInfoHeader::decode((), &mut reader)?;
         if !SUPPORTED_VERSIOMS.contains(&header.version) {
@@ -40,6 +43,7 @@ impl PdbInfo {
     }
 }
 
+/// The fixed-size header of the PDB Info Stream.
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct PdbInfoHeader {
@@ -49,6 +53,8 @@ pub struct PdbInfoHeader {
     pub guid: Guid,
 }
 
+/// A serialized hash table mapping stream names to stream indices.
+/// Consulting this is often the only way to discover a named stream's index.
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct NamedStreams {
@@ -58,6 +64,7 @@ pub struct NamedStreams {
 }
 
 impl NamedStreams {
+    /// Iterates over the named streams.
     pub fn iter(&self) -> impl Iterator<Item = (&str, StreamIndex)> {
         self.offset_index_map.entries().iter().filter_map(|kv| {
             let v = &self.name_buffer[kv.key as usize..].split(|&n| n == 0).next()?;
@@ -66,11 +73,13 @@ impl NamedStreams {
         })
     }
 
+    /// Gets the stream index for a given stream name.
     pub fn get(&self, name: &str) -> Option<StreamIndex> {
         self.iter().find(|(k, _)| k == &name).map(|(_, v)| v)
     }
 }
 
+/// The version of the PDB stream (e.g. VC70).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum PdbVersion {
@@ -88,6 +97,7 @@ pub enum PdbVersion {
 
 impl_bitfield_specifier_codecs!(PdbVersion);
 
+/// PDB Feature Codes specifying additional features, like minimal debug info or presence of an IPI stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum PdbFeature {

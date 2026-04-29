@@ -20,6 +20,8 @@ magic_bytes! {
     pub DbiSignature(&(-1i32).to_le_bytes());
 }
 
+/// The Debug Info (DBI) Stream.
+/// Contains information about how the program was compiled, the compilands (modules) used to link the program, source files used, and references to other streams with more detailed information.
 #[derive(Debug, Getters)]
 pub struct DbiStream {
     header: DbiHeader,
@@ -34,6 +36,7 @@ pub struct DbiStream {
 }
 
 impl DbiStream {
+    /// Reads the DBI Stream from a reader.
     pub fn read<R: io::Read>(mut reader: R) -> Result<Self> {
         let header = DbiHeader::decode((), &mut reader)?;
         if !matches!(header.version, DbiVersion::V70 | DbiVersion::V110) {
@@ -89,6 +92,7 @@ impl DbiStream {
     }
 }
 
+/// The fixed-size header of the DBI stream.
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct DbiHeader {
@@ -115,6 +119,7 @@ pub struct DbiHeader {
     pub reserved: [u8; 4],
 }
 
+/// The version of the DBI stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum DbiVersion {
@@ -127,6 +132,7 @@ pub enum DbiVersion {
 
 impl_bitfield_specifier_codecs!(DbiVersion);
 
+/// Version of the Section Contribution Substream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 #[repr(u32)]
@@ -137,6 +143,7 @@ pub enum SectionContribVersion {
 
 impl_bitfield_specifier_codecs!(SectionContribVersion);
 
+/// A bitfield containing values representing the major and minor version number of the toolchain used to build the program.
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]
 pub struct BuildNumber {
@@ -147,6 +154,7 @@ pub struct BuildNumber {
 
 impl_bitfield_codecs!(BuildNumber);
 
+/// A bitfield containing various information about how the program was built.
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]
 pub struct DbiFlags {
@@ -159,6 +167,7 @@ pub struct DbiFlags {
 
 impl_bitfield_codecs!(DbiFlags);
 
+/// Describes a single module (e.g. object file) linked into the program.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct DbiModule {
@@ -167,6 +176,7 @@ pub struct DbiModule {
     pub obj_file_name: StrBuf,
 }
 
+/// Header for a DbiModule.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct ModuleInfoHeader {
@@ -183,6 +193,7 @@ pub struct ModuleInfoHeader {
     pub pdb_file_path_ni: u32,
 }
 
+/// Flags for a DbiModule.
 #[bitfield(bits = 8)]
 #[derive(Debug, Clone, Copy)]
 pub struct ModuleInfoFlags {
@@ -194,6 +205,7 @@ pub struct ModuleInfoFlags {
 
 impl_bitfield_codecs!(ModuleInfoFlags);
 
+/// Describes the properties of the section in the final binary which contain the code and data from a module.
 #[derive(Debug, Clone, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SectionContrib {
@@ -208,6 +220,7 @@ pub struct SectionContrib {
     pub reloc_crc: u32,
 }
 
+/// The Section Map Substream.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SectionMap {
@@ -217,6 +230,7 @@ pub struct SectionMap {
     pub entries: Vec<SectionMapEntry>,
 }
 
+/// An entry in the Section Map Substream describing a segment descriptor.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SectionMapEntry {
@@ -230,6 +244,7 @@ pub struct SectionMapEntry {
     pub sec_byte_length: u32,
 }
 
+/// The File Info Substream. Defines the mapping from module to the source files that contribute to that module.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FileInfo {
@@ -243,6 +258,7 @@ pub struct FileInfo {
     pub file_name_offsets: Vec<u32>,
 }
 
+/// Flags for a SectionMapEntry.
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]
 pub struct DescriptorFlags {
@@ -261,6 +277,7 @@ pub struct DescriptorFlags {
 
 impl_bitfield_codecs!(DescriptorFlags);
 
+/// A section header from the original executable.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SectionHeader {
@@ -277,6 +294,7 @@ pub struct SectionHeader {
     pub characteristics: u32,
 }
 
+/// A dump of all section headers from the original executable.
 #[derive(Debug, Getters)]
 pub struct SectionHeaderStream {
     headers: Vec<SectionHeader>,
@@ -293,6 +311,7 @@ impl SectionHeaderStream {
     }
 }
 
+/// FPO Data record.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FpoData {
@@ -303,6 +322,7 @@ pub struct FpoData {
     pub attributes: u16,
 }
 
+/// An array of FPO_DATA structures. Contains the relocated contents of any .debug$F section from any of the linker inputs.
 #[derive(Debug, Getters)]
 pub struct FpoStream {
     records: Vec<FpoData>,
@@ -319,6 +339,7 @@ impl FpoStream {
     }
 }
 
+/// Frame Data record.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FrameData {
@@ -333,6 +354,7 @@ pub struct FrameData {
     pub flags: u32,
 }
 
+/// A stream containing frame data.
 #[derive(Debug, Getters)]
 pub struct FrameDataStream {
     frames: Vec<FrameData>,
@@ -353,6 +375,7 @@ impl FrameDataStream {
     }
 }
 
+/// The CPU type.
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 16]
 pub enum MachineType {
