@@ -417,12 +417,19 @@ pub struct Procedure {
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum ThunkOrdinal {
+    /// Standard thunk.
     Standard,
+    /// This adjustor thunk.
     ThisAdjustor,
+    /// Virtual call thunk.
     Vcall,
+    /// P-code thunk.
     Pcode,
+    /// Unknown load thunk.
     UnknownLoad,
+    /// Incremental trampoline thunk.
     TrampIncremental,
+    /// Branch island thunk.
     BranchIsland,
 }
 
@@ -431,7 +438,9 @@ impl_bitfield_specifier_codecs!(ThunkOrdinal);
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 16]
 pub enum TrampolineType {
+    /// Incremental trampoline.
     TrampIncremental,
+    /// Branch island.
     BranchIsland,
 }
 
@@ -440,9 +449,13 @@ impl_bitfield_specifier_codecs!(TrampolineType);
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum FrameCookie {
+    /// Copy cookie.
     Copy,
+    /// XOR stack pointer cookie.
     XorStackPointer,
+    /// XOR frame pointer cookie.
     XorFramePointer,
+    /// XOR R13 cookie.
     XorR13,
 }
 
@@ -451,25 +464,45 @@ impl_bitfield_specifier_codecs!(FrameCookie);
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum SourceLanguage {
+    /// C.
     C = 0x00,
+    /// C++.
     Cpp = 0x01,
+    /// Fortran.
     Fortran = 0x02,
+    /// MASM.
     Masm = 0x03,
+    /// Pascal.
     Pascal = 0x04,
+    /// Basic.
     Basic = 0x05,
+    /// COBOL.
     Cobol = 0x06,
+    /// Linker-generated.
     Link = 0x07,
+    /// CVTRES.
     Cvtres = 0x08,
+    /// CVTPGD.
     Cvtpgd = 0x09,
+    /// C#.
     CSharp = 0x0a,
+    /// Visual Basic.
     VisualBasic = 0x0b,
+    /// IL assembler.
     ILAsm = 0x0c,
+    /// Java.
     Java = 0x0d,
+    /// JScript.
     JScript = 0x0e,
+    /// MSIL.
     Msil = 0x0f,
+    /// HLSL.
     Hlsl = 0x10,
+    /// Rust.
     Rust = 0x15,
+    /// D.
     DLang = 0x44,
+    /// Swift.
     Swift = 0x53,
 }
 
