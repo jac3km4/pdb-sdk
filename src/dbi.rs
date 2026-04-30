@@ -69,7 +69,8 @@ impl DbiStream {
         file_info_stream.read_to_end(&mut file_names)?;
         debug_assert_eq!(file_info_stream.limit(), 0);
 
-        let type_server_stream: Bytes<'_> = Decode::decode(Len(header.type_server_size as usize), &mut reader)?;
+        let type_server_stream: Bytes<'_> =
+            Decode::decode(Len(header.type_server_size as usize), &mut reader)?;
 
         let ec_stream: Strings = Strings::decode((), &mut reader)?;
 

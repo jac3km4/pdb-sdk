@@ -1,4 +1,4 @@
-use std::io;
+use std::{fmt, io};
 
 use declio::util::Bytes;
 use declio::{Decode, Encode, EncodedSize};
@@ -59,7 +59,7 @@ pub struct PdbInfoHeader {
 
 /// A serialized hash table mapping stream names to stream indices.
 /// Consulting this is often the only way to discover a named stream's index.
-#[derive(Debug, Encode, Decode)]
+#[derive(Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct NamedStreams {
     #[declio(via = "Bytes<'_, u32>")]
@@ -80,6 +80,14 @@ impl NamedStreams {
     /// Gets the stream index for a given stream name.
     pub fn get(&self, name: &str) -> Option<StreamIndex> {
         self.iter().find(|(k, _)| k == &name).map(|(_, v)| v)
+    }
+}
+
+impl fmt::Debug for NamedStreams {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list()
+            .entries(self.iter().map(|(k, v)| (k, v.0)))
+            .finish()
     }
 }
 

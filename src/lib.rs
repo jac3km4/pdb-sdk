@@ -1,5 +1,5 @@
-use std::io;
 use std::num::NonZeroU32;
+use std::{fmt, io, mem};
 
 use dbi::{DbiModule, DbiStream, FpoStream, FrameDataStream, SectionHeaderStream};
 use declio::ctx::Len;
@@ -247,8 +247,14 @@ pub struct IndexIsZero;
 
 macro_rules! record_index {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy)]
+        #[derive(Clone, Copy)]
         pub struct $name(NonZeroU32);
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
 
         impl TryFrom<u32> for $name {
             type Error = IndexIsZero;
@@ -289,7 +295,7 @@ macro_rules! record_index {
         impl<Ctx> EncodedSize<Ctx> for $name {
             #[inline]
             fn encoded_size(&self, _ctx: Ctx) -> usize {
-                std::mem::size_of::<u32>()
+                mem::size_of::<u32>()
             }
         }
     };
@@ -316,8 +322,22 @@ record_index!(IdIndex);
 record_index!(TypeIndex);
 
 /// A 128-bit identifier guaranteed to be unique across space and time. Used to match a PDB to its corresponding executable.
-#[derive(Debug, Default, Encode, Decode, EncodedSize)]
+#[derive(Default, Encode, Decode, EncodedSize)]
 pub struct Guid(#[declio(with = "codecs::byte_array")] pub [u8; 16]);
+
+impl fmt::Debug for Guid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "\"{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}\"",
+            self.0[3], self.0[2], self.0[1], self.0[0],
+            self.0[5], self.0[4],
+            self.0[7], self.0[6],
+            self.0[8], self.0[9],
+            self.0[10], self.0[11], self.0[12], self.0[13], self.0[14], self.0[15]
+        )
+    }
+}
 
 /// Represents an integer value encoded in the smallest possible numeric leaf type.
 /// Used in CodeView type records.

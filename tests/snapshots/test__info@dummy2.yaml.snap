@@ -1,0 +1,28 @@
+---
+source: tests/test.rs
+expression: pdb.get_info().unwrap()
+input_file: tests/fixtures/dummy2.yaml
+---
+PdbInfo {
+    header: PdbInfoHeader {
+        version: Vc70,
+        signature: 4077785295,
+        age: 1,
+        guid: "F30E10CF-C61A-E28B-4C4C-44205044422E",
+    },
+    named_streams: [
+        (
+            "/names",
+            7,
+        ),
+        (
+            "/LinkInfo",
+            5,
+        ),
+    ],
+    features: [
+        None,
+        Vc140,
+        Vc140,
+    ],
+}

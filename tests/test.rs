@@ -1,6 +1,9 @@
-use std::fs::File;
-use std::io;
+use std::fs::{self, File};
+use std::path::Path;
+use std::process::Command;
+use std::{env, io};
 
+use anyhow::{bail, Context, Result};
 use assert_matches::assert_matches;
 use pdb_sdk::builders::PdbBuilder;
 use pdb_sdk::codeview::symbols::{Constant, ProcedureProperties, Public, PublicProperties, SymbolRecord};
@@ -8,14 +11,12 @@ use pdb_sdk::codeview::types::{BuiltinType, IdRecord, PointerKind, PointerProper
 use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::dbi::SectionHeader;
 use pdb_sdk::info::PdbFeature;
-use pdb_sdk::result::Result;
 use pdb_sdk::utils::StrBuf;
 use pdb_sdk::{Integer, PdbFile};
 
 #[test]
 fn roundtrip() -> Result<()> {
-    let dummy = write_dummy()?;
-    let mut pdb = PdbFile::open(dummy)?;
+    let mut pdb = PdbFile::open(write_dummy()?)?;
 
     let dbi = pdb.get_dbi()?;
     assert_eq!(dbi.header().age, 1);
@@ -28,7 +29,7 @@ fn roundtrip() -> Result<()> {
 
     let hash = pdb.get_tpi_hash(&tpi)?;
     assert_matches!(
-        tpi.record(hash.get_index("pointer_type").unwrap()),
+        tpi.record(hash.get_index("pointer_type").context("missing pointer_type")?),
         Some(TypeRecord::Pointer { .. })
     );
 
@@ -56,7 +57,10 @@ fn read_llvm_pdb() -> Result<()> {
 
     let hash = pdb.get_tpi_hash(&tpi)?;
     assert_matches!(
-        tpi.record(hash.get_index("core::fmt::rt::v1::FormatSpec").unwrap()),
+        tpi.record(
+            hash.get_index("core::fmt::rt::v1::FormatSpec")
+                .context("missing FormatSpec")?
+        ),
         Some(TypeRecord::Struct { .. })
     );
 
@@ -77,6 +81,62 @@ fn read_llvm_pdb() -> Result<()> {
 
     let module = pdb.get_module(&dbi.modules()[1])?;
     assert_matches!(module.symbols().first(), Some(SymbolRecord::ObjectName { .. }));
+
+    Ok(())
+}
+
+#[test]
+fn generate_and_read_pdb_from_yaml() {
+    let Some(pdbutil) = find_pdbutil() else {
+        println!("Skipping yaml2pdb test because no suitable LLVM tool was found.");
+        return;
+    };
+
+    insta::glob!("fixtures/*.yaml", |path| {
+        let temp_pdb = env::temp_dir().join("temp_generated.pdb");
+        yaml2pdb(&pdbutil, path, &temp_pdb).expect("failed to convert yaml to pdb");
+
+        let mut pdb =
+            PdbFile::open(File::open(&temp_pdb).expect("failed to open pdb")).expect("failed to parse pdb");
+
+        insta::assert_debug_snapshot!("info", pdb.get_info().unwrap());
+
+        if let Ok(dbi) = pdb.get_dbi() {
+            insta::assert_debug_snapshot!("dbi", dbi);
+        }
+
+        let tpi = pdb.get_tpi().unwrap();
+        insta::assert_debug_snapshot!("tpi", tpi.records());
+
+        let ipi = pdb.get_ipi().unwrap();
+        insta::assert_debug_snapshot!("ipi", ipi.records());
+
+        fs::remove_file(&temp_pdb).ok();
+    });
+}
+
+fn find_pdbutil() -> Option<String> {
+    ["llvm-pdbutil-18", "llvm-pdbutil", "yaml2pdb"]
+        .into_iter()
+        .find(|&cmd| Command::new(cmd).arg("--version").output().is_ok())
+        .map(ToString::to_string)
+}
+
+fn yaml2pdb(pdbutil: &str, yaml_path: &Path, pdb_path: &Path) -> Result<()> {
+    let mut cmd = Command::new(pdbutil);
+    if pdbutil != "yaml2pdb" {
+        cmd.arg("yaml2pdb");
+    }
+
+    let status = cmd
+        .arg(yaml_path)
+        .arg(format!("--pdb={}", pdb_path.display()))
+        .status()
+        .context("Failed to execute tool")?;
+
+    if !status.success() {
+        bail!("Tool failed to generate pdb for {:?}", yaml_path);
+    }
 
     Ok(())
 }
@@ -102,6 +162,7 @@ fn write_dummy() -> Result<io::Cursor<Vec<u8>>> {
         offset: DataRegionOffset::new(0, 0),
         name: StrBuf::new("hello"),
     });
+
     let sym_builder = sym_builder.finish_publics();
     sym_builder.add(SymbolRecord::Label {
         code_offset: DataRegionOffset::new(0, 0),

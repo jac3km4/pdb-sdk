@@ -1,0 +1,42 @@
+---
+MSF:
+  SuperBlock:
+    BlockSize:       4096
+    FreeBlockMap:    2
+    NumBlocks:       15
+    NumDirectoryBytes: 116
+    Unknown1:        0
+    BlockMapAddr:    3
+  NumDirectoryBlocks: 1
+  DirectoryBlocks: [ 13 ]
+  NumStreams:      0
+  FileSize:        61440
+PdbStream:
+  Age:             1
+  Guid:            '{F30E10CF-C61A-E28B-4C4C-44205044422E}'
+  Signature:       4077785295
+  Features:        [ VC140 ]
+  Version:         VC70
+DbiStream:
+  VerHeader:       V70
+  Age:             1
+  BuildNumber:     36363
+  PdbDllVersion:   0
+  PdbDllRbld:      0
+  Flags:           0
+  MachineType:     Amd64
+TpiStream:
+  Version:         VC80
+  Records:
+    - Kind:            LF_ARGLIST
+      ArgList:
+        ArgIndices:      [  ]
+IpiStream:
+  Version:         VC80
+  Records:
+    - Kind:            LF_FUNC_ID
+      FuncId:
+        ParentScope:     0
+        FunctionType:    4096
+        Name:            main
+...

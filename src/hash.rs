@@ -1,9 +1,11 @@
+use std::fmt;
+
 use declio::ctx::Len;
 use declio::{Decode, Encode};
 
 use crate::constants;
 
-#[derive(Debug, Encode, Decode)]
+#[derive(Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub(crate) struct Table {
     size: u32,
@@ -29,6 +31,14 @@ impl Table {
 
     pub fn entries(&self) -> &[KeyVal] {
         &self.entries
+    }
+}
+
+impl fmt::Debug for Table {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map()
+            .entries(self.entries.iter().map(|kv| (kv.key, kv.val)))
+            .finish()
     }
 }
 
@@ -85,7 +95,7 @@ impl BitVector {
         this
     }
 
-/// Gets the bit at the specified index.
+    /// Gets the bit at the specified index.
     #[allow(unused)]
     pub fn get(&self, n: usize) -> Option<bool> {
         let elem = self.buf.get(n / 8)?;
@@ -98,7 +108,7 @@ impl BitVector {
         *elem |= 1 << (n % 8);
     }
 
-/// Counts the number of ones in the bit vector.
+    /// Counts the number of ones in the bit vector.
     #[allow(unused)]
     pub fn count_ones(&self) -> u32 {
         self.buf.iter().map(|b| b.count_ones()).sum()
