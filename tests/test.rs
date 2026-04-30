@@ -108,16 +108,9 @@ fn generate_and_read_pdb_from_yaml() {
             .expect("failed to parse pdb");
 
         insta::assert_debug_snapshot!("info", pdb.get_info().unwrap());
-
-        if let Ok(dbi) = pdb.get_dbi() {
-            insta::assert_debug_snapshot!("dbi", dbi);
-        }
-
-        let tpi = pdb.get_tpi().unwrap();
-        insta::assert_debug_snapshot!("tpi", tpi.records());
-
-        let ipi = pdb.get_ipi().unwrap();
-        insta::assert_debug_snapshot!("ipi", ipi.records());
+        insta::assert_debug_snapshot!("dbi", pdb.get_dbi().expect("failed to get dbi"));
+        insta::assert_debug_snapshot!("tpi", pdb.get_tpi().expect("failed to get tpi").records());
+        insta::assert_debug_snapshot!("ipi", pdb.get_ipi().expect("failed to get ipi").records());
 
         fs::remove_file(&temp_pdb).ok();
     });

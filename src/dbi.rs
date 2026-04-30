@@ -49,22 +49,42 @@ impl DbiStream {
 
         let mut sect_contr_stream = reader.by_ref().take(header.sec_contr_stream_size.into());
         let mut section_contribs = vec![];
-        let version = SectionContribVersion::decode(constants::ENDIANESS, &mut sect_contr_stream)?;
-
-        while sect_contr_stream.limit() > 0 {
-            section_contribs.push(SectionContrib::decode((), &mut sect_contr_stream)?);
-            if version == SectionContribVersion::V2 {
-                // isect coff
-                u32::decode(constants::ENDIANESS, &mut sect_contr_stream)?;
+        if sect_contr_stream.limit() > 0 {
+            let version =
+                SectionContribVersion::decode(constants::ENDIANESS, &mut sect_contr_stream)?;
+            while sect_contr_stream.limit() > 0 {
+                section_contribs.push(SectionContrib::decode((), &mut sect_contr_stream)?);
+                if version == SectionContribVersion::V2 {
+                    // isect coff
+                    u32::decode(constants::ENDIANESS, &mut sect_contr_stream)?;
+                }
             }
         }
 
         let mut sec_map_stream = reader.by_ref().take(header.section_map_size.into());
-        let sec_map = SectionMap::decode((), &mut sec_map_stream)?;
+        let sec_map = if sec_map_stream.limit() > 0 {
+            SectionMap::decode((), &mut sec_map_stream)?
+        } else {
+            SectionMap {
+                sec_count: 0,
+                sec_count_log: 0,
+                entries: vec![],
+            }
+        };
         debug_assert_eq!(sec_map_stream.limit(), 0);
 
         let mut file_info_stream = reader.by_ref().take(header.file_info_size.into());
-        let file_info = FileInfo::decode((), &mut file_info_stream)?;
+        let file_info = if file_info_stream.limit() > 0 {
+            FileInfo::decode((), &mut file_info_stream)?
+        } else {
+            FileInfo {
+                num_modules: 0,
+                num_source_files: 0,
+                module_indicies: vec![],
+                module_file_counts: vec![],
+                file_name_offsets: vec![],
+            }
+        };
 
         let mut file_names = vec![];
         file_info_stream.read_to_end(&mut file_names)?;
