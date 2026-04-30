@@ -1,12 +1,12 @@
 ---
 source: tests/test.rs
-expression: ipi.records()
+expression: "pdb.get_ipi().expect(\"failed to get ipi\").records()"
 input_file: tests/fixtures/dummy2.yaml
 ---
 [
     FuncId {
         parent_scope: None,
-        function_type: 4096,
-        name: "main",
+        function_type: 4097,
+        name: "other_main",
     },
 ]

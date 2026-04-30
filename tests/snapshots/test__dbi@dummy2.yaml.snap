@@ -1,16 +1,16 @@
 ---
 source: tests/test.rs
-expression: dbi
+expression: "pdb.get_dbi().expect(\"failed to get dbi\")"
 input_file: tests/fixtures/dummy2.yaml
 ---
 DbiStream {
     header: DbiHeader {
         signature: DbiSignature,
         version: V70,
-        age: 1,
+        age: 2,
         global_symbol_stream_index: 65535,
         build_number: BuildNumber {
-            minor: 11,
+            minor: 12,
             major: 14,
             is_new_format: true,
         },
@@ -31,7 +31,7 @@ DbiStream {
             is_stripped: false,
             has_c_types: false,
         },
-        machine_type: Amd64,
+        machine_type: X86,
         reserved: [
             0,
             0,
