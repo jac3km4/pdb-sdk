@@ -7,7 +7,7 @@ use modular_bitfield::Specifier;
 
 use crate::hash::Table;
 use crate::result::{Error, Result};
-use crate::{codecs, constants, impl_bitfield_specifier_codecs, Guid, StreamIndex};
+use crate::{Guid, StreamIndex, codecs, constants, impl_bitfield_specifier_codecs};
 
 const SUPPORTED_VERSIOMS: &[PdbVersion] = &[
     PdbVersion::Vc70,

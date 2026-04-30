@@ -2,7 +2,7 @@ use std::io::{self, Read};
 
 use declio::ctx::Len;
 use declio::util::Bytes;
-use declio::{magic_bytes, Decode, Encode, EncodedSize};
+use declio::{Decode, Encode, EncodedSize, magic_bytes};
 use derive_getters::Getters;
 use modular_bitfield::bitfield;
 use modular_bitfield::prelude::*;
@@ -12,8 +12,8 @@ use crate::result::{Error, Result};
 use crate::strings::Strings;
 use crate::utils::StrBuf;
 use crate::{
-    codecs, constants, impl_bitfield_codecs, impl_bitfield_specifier_codecs, BufMsfStream,
-    StreamIndex,
+    BufMsfStream, StreamIndex, codecs, constants, impl_bitfield_codecs,
+    impl_bitfield_specifier_codecs,
 };
 
 magic_bytes! {

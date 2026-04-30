@@ -333,11 +333,22 @@ impl fmt::Debug for Guid {
         write!(
             f,
             "\"{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}\"",
-            self.0[3], self.0[2], self.0[1], self.0[0],
-            self.0[5], self.0[4],
-            self.0[7], self.0[6],
-            self.0[8], self.0[9],
-            self.0[10], self.0[11], self.0[12], self.0[13], self.0[14], self.0[15]
+            self.0[3],
+            self.0[2],
+            self.0[1],
+            self.0[0],
+            self.0[5],
+            self.0[4],
+            self.0[7],
+            self.0[6],
+            self.0[8],
+            self.0[9],
+            self.0[10],
+            self.0[11],
+            self.0[12],
+            self.0[13],
+            self.0[14],
+            self.0[15]
         )
     }
 }

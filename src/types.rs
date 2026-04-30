@@ -2,16 +2,16 @@ use std::fmt::Debug;
 use std::io::{self, Read};
 
 use declio::ctx::Len;
-use declio::{magic_bytes, Decode, Encode, EncodedSize};
+use declio::{Decode, Encode, EncodedSize, magic_bytes};
 use derive_getters::Getters;
 use modular_bitfield::Specifier;
 
-use crate::codeview::types::{IdRecord, TypeRecord};
 use crate::codeview::PrefixedRecord;
-use crate::hash::{hash_v1, Table};
+use crate::codeview::types::{IdRecord, TypeRecord};
+use crate::hash::{Table, hash_v1};
 use crate::msf::MsfStreamWriter;
 use crate::result::{Error, Result};
-use crate::{constants, impl_bitfield_specifier_codecs, IdIndex, StreamIndex, TypeIndex};
+use crate::{IdIndex, StreamIndex, TypeIndex, constants, impl_bitfield_specifier_codecs};
 
 pub(crate) const HASH_BUCKET_NUMBER: u32 = 0x40000u32 - 1;
 pub(crate) const FIRST_NON_BUILTIN_TYPE: u32 = 0x1000;

@@ -1,17 +1,17 @@
 use std::fs::File;
 use std::io;
 
+use pdb_sdk::Integer;
 use pdb_sdk::builders::PdbBuilder;
+use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::codeview::symbols::{
     Constant, ProcedureProperties, Public, PublicProperties, SymbolRecord,
 };
 use pdb_sdk::codeview::types::{
     BuiltinType, IdRecord, MemberProperties, PointerKind, PointerProperties, TypeRecord,
 };
-use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::result::Result;
 use pdb_sdk::utils::StrBuf;
-use pdb_sdk::Integer;
 
 fn main() -> Result<()> {
     let mut builder = PdbBuilder::default();

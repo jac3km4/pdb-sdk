@@ -7,8 +7,8 @@ use modular_bitfield::prelude::*;
 use super::{DataRegionOffset, Register};
 use crate::utils::StrBuf;
 use crate::{
-    codecs, constants, impl_bitfield_codecs, impl_bitfield_specifier_codecs, IdIndex, Integer,
-    SymbolOffset, TypeIndex,
+    IdIndex, Integer, SymbolOffset, TypeIndex, codecs, constants, impl_bitfield_codecs,
+    impl_bitfield_specifier_codecs,
 };
 
 #[derive(Debug, Encode, Decode, EncodedSize)]

@@ -1,7 +1,7 @@
 use std::fs::File;
 
-use pdb_sdk::result::Result;
 use pdb_sdk::PdbFile;
+use pdb_sdk::result::Result;
 
 fn main() -> Result<()> {
     let mut reader = PdbFile::open(File::open("./tests/llvm.pdb")?)?;

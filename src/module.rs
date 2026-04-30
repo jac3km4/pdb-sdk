@@ -2,7 +2,7 @@ use std::io::{self, Read, Write};
 
 use declio::ctx::{Endian, Len};
 use declio::util::Bytes;
-use declio::{magic_bytes, Decode, Encode, EncodedSize};
+use declio::{Decode, Encode, EncodedSize, magic_bytes};
 use derive_getters::Getters;
 use modular_bitfield::prelude::*;
 

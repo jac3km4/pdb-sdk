@@ -3,13 +3,13 @@ use std::fmt::Debug;
 use std::io;
 
 use declio::ctx::Len;
-use declio::{magic_bytes, Decode, Encode, EncodedSize};
+use declio::{Decode, Encode, EncodedSize, magic_bytes};
 
 use crate::codeview::NamedSymbol;
 use crate::hash::hash_v1;
 use crate::result::Result;
 use crate::utils::CaseInsensitiveStr;
-use crate::{constants, SymbolOffset};
+use crate::{SymbolOffset, constants};
 
 const HDR_VERSION: u32 = 0xeffe_0000 + 19_990_810;
 const IPHR_HASH: usize = 4096;

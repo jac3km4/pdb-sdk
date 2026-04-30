@@ -3,14 +3,14 @@ use std::path::Path;
 use std::process::Command;
 use std::{env, io};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use assert_matches::assert_matches;
 use pdb_sdk::builders::PdbBuilder;
+use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::codeview::symbols::{
     Constant, ProcedureProperties, Public, PublicProperties, SymbolRecord,
 };
 use pdb_sdk::codeview::types::{BuiltinType, IdRecord, PointerKind, PointerProperties, TypeRecord};
-use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::dbi::SectionHeader;
 use pdb_sdk::info::PdbFeature;
 use pdb_sdk::utils::StrBuf;
