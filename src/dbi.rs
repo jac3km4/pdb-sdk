@@ -69,7 +69,7 @@ impl DbiStream {
         file_info_stream.read_to_end(&mut file_names)?;
         debug_assert_eq!(file_info_stream.limit(), 0);
 
-        let type_server_stream: Bytes = Decode::decode(Len(header.type_server_size as usize), &mut reader)?;
+        let type_server_stream: Bytes<'_> = Decode::decode(Len(header.type_server_size as usize), &mut reader)?;
 
         let ec_stream: Strings = Strings::decode((), &mut reader)?;
 
@@ -143,15 +143,15 @@ pub struct DbiHeader {
 #[bits = 32]
 pub enum DbiVersion {
     /// Version VC41.
-    Vc41 = 930803,
+    Vc41 = 930_803,
     /// Version V50.
-    V50 = 19960307,
+    V50 = 19_960_307,
     /// Version V60.
-    V60 = 19970606,
+    V60 = 19_970_606,
     /// Version V70.
-    V70 = 19990903,
+    V70 = 19_990_903,
     /// Version V110.
-    V110 = 20091201,
+    V110 = 20_091_201,
 }
 
 impl_bitfield_specifier_codecs!(DbiVersion);
@@ -162,9 +162,9 @@ impl_bitfield_specifier_codecs!(DbiVersion);
 #[repr(u32)]
 pub enum SectionContribVersion {
     /// Version 60.
-    Ver60 = 0xeffe0000 + 19970605,
+    Ver60 = 0xeffe_0000 + 19_970_605,
     /// Version V2.
-    V2 = 0xeffe0000 + 20140516,
+    V2 = 0xeffe_0000 + 20_140_516,
 }
 
 impl_bitfield_specifier_codecs!(SectionContribVersion);
@@ -375,7 +375,7 @@ pub struct SectionHeaderStream {
 impl SectionHeaderStream {
     const ENTRY_SIZE: u32 = 40;
 
-    pub(crate) fn read<R: io::Read + io::Seek>(mut reader: BufMsfStream<R>) -> Result<Self> {
+    pub(crate) fn read<R: io::Read + io::Seek>(mut reader: BufMsfStream<'_, R>) -> Result<Self> {
         let count = reader.get_ref().length() / Self::ENTRY_SIZE;
         let records = Decode::decode(Len(count as usize), &mut reader)?;
         debug_assert!(reader.get_ref().is_eof());
@@ -408,7 +408,7 @@ pub struct FpoStream {
 impl FpoStream {
     const ENTRY_SIZE: u32 = 16;
 
-    pub(crate) fn read<R: io::Read + io::Seek>(mut reader: BufMsfStream<R>) -> Result<Self> {
+    pub(crate) fn read<R: io::Read + io::Seek>(mut reader: BufMsfStream<'_, R>) -> Result<Self> {
         let count = reader.get_ref().length() / Self::ENTRY_SIZE;
         let records = Decode::decode(Len(count as usize), &mut reader)?;
         debug_assert!(reader.get_ref().is_eof());
@@ -449,7 +449,7 @@ pub struct FrameDataStream {
 impl FrameDataStream {
     const ENTRY_SIZE: u32 = 32;
 
-    pub(crate) fn read<R: io::Read + io::Seek>(mut reader: BufMsfStream<R>) -> Result<Self> {
+    pub(crate) fn read<R: io::Read + io::Seek>(mut reader: BufMsfStream<'_, R>) -> Result<Self> {
         if !reader.get_ref().length().is_multiple_of(Self::ENTRY_SIZE) {
             // reloc_ptr
             u32::decode(constants::ENDIANESS, &mut reader)?;

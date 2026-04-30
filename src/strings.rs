@@ -10,7 +10,7 @@ use crate::{constants, impl_bitfield_specifier_codecs, StringOffset};
 
 magic_bytes! {
     #[derive(Debug)]
-    StringsSignature(&0xEFFEEFFEu32.to_le_bytes());
+    StringsSignature(&0xEFFE_EFFE_u32.to_le_bytes());
 }
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
@@ -18,9 +18,9 @@ magic_bytes! {
 pub struct Strings {
     signature: StringsSignature,
     hash_version: HashVersion,
-    #[declio(via = "Bytes<u32>")]
+    #[declio(via = "Bytes<'_, u32>")]
     bytes: Vec<u8>,
-    #[declio(via = "PrefixVec<u32, u32>")]
+    #[declio(via = "PrefixVec<'_, u32, u32>")]
     ids: Vec<u32>,
     name_count: u32,
 }
