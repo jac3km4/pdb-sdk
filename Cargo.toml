@@ -45,5 +45,4 @@ rev = "ccc6949"
 anyhow = "1.0"
 assert_matches = "1.5"
 insta = "1.47.2"
-
 object = "0.39"
