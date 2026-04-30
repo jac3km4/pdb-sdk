@@ -14,6 +14,9 @@ magic_bytes! {
     StringsSignature(&0xEFFE_EFFE_u32.to_le_bytes());
 }
 
+/// Represents the PDB String Table (or `/names` stream).
+/// It contains a deduplicated table of strings mapped to their offsets.
+/// Analogous to `PDBStringTable` in LLVM.
 #[derive(Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct Strings {

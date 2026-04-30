@@ -7,6 +7,10 @@ use crate::codeview::PrefixedRecord;
 use crate::codeview::symbols::SymbolRecord;
 use crate::result::Result;
 
+/// Represents the Global Symbol Stream (often referred to as the "symbol record stream").
+/// It contains a flat list of `SymbolRecord`s which encompass global symbols (e.g. Data, Procedure, Public).
+/// Note that unlike the LLVM implementation which may lazily iterate the `CVSymbolArray` via a stream reader,
+/// this implementation eagerly reads all records into a `Vec`.
 #[derive(Debug, Getters)]
 pub struct Symbols {
     records: Vec<SymbolRecord>,

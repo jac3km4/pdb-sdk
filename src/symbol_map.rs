@@ -26,6 +26,10 @@ magic_bytes! {
 
 pub type Globals = SymbolMap;
 
+/// Represents the Global Symbol Information (GSI) Hash Table.
+/// This structure is used within both the Globals Stream and the Publics Stream.
+/// LLVM handles this with `GlobalsStream` and the `GSIHashTable` class via lazy record access.
+/// Here, we keep the buckets and hash records in memory to allow querying.
 #[derive(Debug, EncodedSize)]
 pub struct SymbolMap {
     hash_records: Vec<IndexRecord>,
