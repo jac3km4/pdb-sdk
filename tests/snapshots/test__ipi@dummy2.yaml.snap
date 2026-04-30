@@ -1,0 +1,12 @@
+---
+source: tests/test.rs
+expression: ipi.records()
+input_file: tests/fixtures/dummy2.yaml
+---
+[
+    FuncId {
+        parent_scope: None,
+        function_type: 4096,
+        name: "main",
+    },
+]

@@ -1,6 +1,7 @@
 ---
 source: tests/test.rs
 expression: tpi.records()
+input_file: tests/fixtures/dummy2.yaml
 ---
 [
     ArgList {

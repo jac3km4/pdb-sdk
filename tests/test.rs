@@ -1,7 +1,9 @@
 use std::fs::File;
 use std::io;
+use std::path::Path;
 use std::process::Command;
 
+use anyhow::{bail, Context, Result};
 use assert_matches::assert_matches;
 use pdb_sdk::builders::PdbBuilder;
 use pdb_sdk::codeview::symbols::{Constant, ProcedureProperties, Public, PublicProperties, SymbolRecord};
@@ -9,14 +11,12 @@ use pdb_sdk::codeview::types::{BuiltinType, IdRecord, PointerKind, PointerProper
 use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::dbi::SectionHeader;
 use pdb_sdk::info::PdbFeature;
-use pdb_sdk::result::Result;
 use pdb_sdk::utils::StrBuf;
 use pdb_sdk::{Integer, PdbFile};
 
 #[test]
 fn roundtrip() -> Result<()> {
-    let dummy = write_dummy()?;
-    let mut pdb = PdbFile::open(dummy)?;
+    let mut pdb = PdbFile::open(write_dummy()?)?;
 
     let dbi = pdb.get_dbi()?;
     assert_eq!(dbi.header().age, 1);
@@ -29,7 +29,7 @@ fn roundtrip() -> Result<()> {
 
     let hash = pdb.get_tpi_hash(&tpi)?;
     assert_matches!(
-        tpi.record(hash.get_index("pointer_type").unwrap()),
+        tpi.record(hash.get_index("pointer_type").context("missing pointer_type")?),
         Some(TypeRecord::Pointer { .. })
     );
 
@@ -57,7 +57,10 @@ fn read_llvm_pdb() -> Result<()> {
 
     let hash = pdb.get_tpi_hash(&tpi)?;
     assert_matches!(
-        tpi.record(hash.get_index("core::fmt::rt::v1::FormatSpec").unwrap()),
+        tpi.record(
+            hash.get_index("core::fmt::rt::v1::FormatSpec")
+                .context("missing FormatSpec")?
+        ),
         Some(TypeRecord::Struct { .. })
     );
 
@@ -83,80 +86,56 @@ fn read_llvm_pdb() -> Result<()> {
 }
 
 #[test]
-fn generate_and_read_pdb_from_yaml() -> Result<()> {
-    let tool = ["llvm-pdbutil-18", "llvm-pdbutil", "yaml2pdb"]
-        .iter()
-        .find(|&&cmd| Command::new(cmd).arg("--version").output().is_ok());
-
-    let Some(&pdbutil) = tool else {
+fn generate_and_read_pdb_from_yaml() {
+    let Some(pdbutil) = find_pdbutil() else {
         println!("Skipping yaml2pdb test because no suitable LLVM tool was found.");
-        return Ok(());
+        return;
     };
 
-    let temp_pdb = std::env::temp_dir().join("temp_generated.pdb");
+    insta::glob!("fixtures/*.yaml", |path| {
+        let temp_pdb = std::env::temp_dir().join("temp_generated.pdb");
+        yaml2pdb(&pdbutil, path, &temp_pdb).expect("failed to convert yaml to pdb");
 
-    for entry in std::fs::read_dir("tests/fixtures").unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
+        let mut pdb =
+            PdbFile::open(File::open(&temp_pdb).expect("failed to open pdb")).expect("failed to parse pdb");
 
-        if path.extension().and_then(|s| s.to_str()) != Some("yaml") {
-            continue;
+        insta::assert_debug_snapshot!("info", pdb.get_info().unwrap());
+
+        if let Ok(dbi) = pdb.get_dbi() {
+            insta::assert_debug_snapshot!("dbi", dbi);
         }
 
-        let mut cmd = Command::new(pdbutil);
-        if pdbutil != "yaml2pdb" {
-            cmd.arg("yaml2pdb");
-        }
+        let tpi = pdb.get_tpi().unwrap();
+        insta::assert_debug_snapshot!("tpi", tpi.records());
 
-        let status = cmd
-            .arg(&path)
-            .arg(format!("--pdb={}", temp_pdb.display()))
-            .status()
-            .expect("Failed to execute tool");
-
-        if !status.success() {
-            panic!("Tool failed to generate pdb for {:?}", path);
-        }
-
-        let mut pdb = match PdbFile::open(File::open(&temp_pdb)?) {
-            Ok(p) => p,
-            Err(e) => {
-                std::fs::remove_file(&temp_pdb).ok();
-                return Err(e);
-            }
-        };
-
-        let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
-
-        let mut settings = insta::Settings::clone_current();
-        settings.set_snapshot_suffix(format!("{}_info", file_stem));
-        settings.bind(|| {
-            let info = pdb.get_info().unwrap();
-            insta::assert_debug_snapshot!(info);
-        });
-
-        settings.set_snapshot_suffix(format!("{}_dbi", file_stem));
-        settings.bind(|| {
-            if let Ok(dbi) = pdb.get_dbi() {
-                insta::assert_debug_snapshot!(dbi);
-            }
-        });
-
-        settings.set_snapshot_suffix(format!("{}_tpi", file_stem));
-        settings.bind(|| {
-            if let Ok(tpi) = pdb.get_tpi() {
-                insta::assert_debug_snapshot!(tpi.records());
-            }
-        });
-
-        settings.set_snapshot_suffix(format!("{}_ipi", file_stem));
-        settings.bind(|| {
-            if let Ok(ipi) = pdb.get_ipi() {
-                insta::assert_debug_snapshot!(ipi.records());
-            }
-        });
+        let ipi = pdb.get_ipi().unwrap();
+        insta::assert_debug_snapshot!("ipi", ipi.records());
 
         std::fs::remove_file(&temp_pdb).ok();
+    });
+}
+
+fn find_pdbutil() -> Option<String> {
+    ["llvm-pdbutil-18", "llvm-pdbutil", "yaml2pdb"]
+        .into_iter()
+        .find(|&cmd| Command::new(cmd).arg("--version").output().is_ok())
+        .map(|s| s.to_string())
+}
+
+fn yaml2pdb(pdbutil: &str, yaml_path: &Path, pdb_path: &Path) -> Result<()> {
+    let mut cmd = Command::new(pdbutil);
+    if pdbutil != "yaml2pdb" {
+        cmd.arg("yaml2pdb");
+    }
+
+    let status = cmd
+        .arg(yaml_path)
+        .arg(format!("--pdb={}", pdb_path.display()))
+        .status()
+        .context("Failed to execute tool")?;
+
+    if !status.success() {
+        bail!("Tool failed to generate pdb for {:?}", yaml_path);
     }
 
     Ok(())
@@ -164,24 +143,18 @@ fn generate_and_read_pdb_from_yaml() -> Result<()> {
 
 fn write_dummy() -> Result<io::Cursor<Vec<u8>>> {
     let mut builder = PdbBuilder::default();
-    builder.tpi().add(
-        "pointer_type",
-        TypeRecord::Pointer {
-            referent: BuiltinType::I64.into(),
-            properties: PointerProperties::new()
-                .with_is_const(true)
-                .with_is_volatile(true)
-                .with_kind(PointerKind::Near64),
-            containing_class: None,
-        },
-    );
-    builder.ipi().add(
-        "string_id",
-        IdRecord::StringId {
-            id: None,
-            string: StrBuf::new("test"),
-        },
-    );
+    builder.tpi().add("pointer_type", TypeRecord::Pointer {
+        referent: BuiltinType::I64.into(),
+        properties: PointerProperties::new()
+            .with_is_const(true)
+            .with_is_volatile(true)
+            .with_kind(PointerKind::Near64),
+        containing_class: None,
+    });
+    builder.ipi().add("string_id", IdRecord::StringId {
+        id: None,
+        string: StrBuf::new("test"),
+    });
 
     let mut sym_builder = builder.dbi().symbols();
     sym_builder.add(Public {
@@ -189,6 +162,7 @@ fn write_dummy() -> Result<io::Cursor<Vec<u8>>> {
         offset: DataRegionOffset::new(0, 0),
         name: StrBuf::new("hello"),
     });
+
     let sym_builder = sym_builder.finish_publics();
     sym_builder.add(SymbolRecord::Label {
         code_offset: DataRegionOffset::new(0, 0),

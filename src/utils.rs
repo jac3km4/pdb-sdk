@@ -1,5 +1,5 @@
-use std::cmp::Ordering;
 use std::io;
+use std::{cmp::Ordering, fmt};
 
 use declio::{Decode, Encode, EncodedSize};
 
@@ -7,12 +7,18 @@ pub(crate) const fn align_to(val: usize, align: usize) -> usize {
     val.div_ceil(align) * align
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct StrBuf(Box<str>);
 
 impl StrBuf {
     pub fn new<S: Into<Box<str>>>(str: S) -> Self {
         Self(str.into())
+    }
+}
+
+impl fmt::Debug for StrBuf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, f)
     }
 }
 

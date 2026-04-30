@@ -498,8 +498,9 @@ impl SymbolRecord {
             | SymbolRecord::GlobalData(data)
             | SymbolRecord::ManagedLocalData(data)
             | SymbolRecord::ManagedGlobalData(data) => Some(data.name.as_ref()),
-            SymbolRecord::ThreadLocalStorage(tls)
-            | SymbolRecord::GlobalThreadLocalStorage(tls) => Some(tls.name.as_ref()),
+            SymbolRecord::ThreadLocalStorage(tls) | SymbolRecord::GlobalThreadLocalStorage(tls) => {
+                Some(tls.name.as_ref())
+            }
             _ => None,
         }
     }
