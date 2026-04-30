@@ -19,24 +19,25 @@ PdbStream:
   Version:         VC70
 DbiStream:
   VerHeader:       V70
-  Age:             1
-  BuildNumber:     36363
+  Age:             2
+  BuildNumber:     36364
   PdbDllVersion:   0
   PdbDllRbld:      0
   Flags:           0
-  MachineType:     Amd64
+  MachineType:     x86
 TpiStream:
   Version:         VC80
   Records:
-    - Kind:            LF_ARGLIST
-      ArgList:
-        ArgIndices:      [  ]
+    - Kind:            LF_POINTER
+      Pointer:
+        ReferentType:    4096
+        Attrs:           65548
 IpiStream:
   Version:         VC80
   Records:
     - Kind:            LF_FUNC_ID
       FuncId:
         ParentScope:     0
-        FunctionType:    4096
-        Name:            main
+        FunctionType:    4097
+        Name:            other_main
 ...

@@ -1,11 +1,13 @@
 ---
 source: tests/test.rs
-expression: tpi.records()
+expression: "pdb.get_tpi().expect(\"failed to get tpi\").records()"
 input_file: tests/fixtures/dummy.yaml
 ---
 [
     ArgList {
-        count: 0,
-        arg_list: [],
+        count: 1,
+        arg_list: [
+            1234,
+        ],
     },
 ]

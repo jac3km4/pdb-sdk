@@ -1,11 +1,24 @@
 ---
 source: tests/test.rs
-expression: tpi.records()
+expression: "pdb.get_tpi().expect(\"failed to get tpi\").records()"
 input_file: tests/fixtures/dummy2.yaml
 ---
 [
-    ArgList {
-        count: 0,
-        arg_list: [],
+    Pointer {
+        referent: 4096,
+        properties: PointerProperties {
+            kind: Near64,
+            mode: Vanilla,
+            is_flat32: false,
+            is_volatile: false,
+            is_const: false,
+            is_unaligned: false,
+            is_restrict: false,
+            size: 8,
+            is_mocom: false,
+            is_lref: false,
+            is_rref: false,
+        },
+        containing_class: None,
     },
 ]
