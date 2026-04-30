@@ -9,11 +9,10 @@ use crate::utils::StrBuf;
 use crate::{
     codecs, constants, impl_bitfield_codecs, impl_bitfield_specifier_codecs, Guid, Integer, TypeIndex
 };
-/// CodeView Type Record, representing various types (e.g., pointers, modifiers, structs).
+
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS", id_type = "LittleEndian<u16>")]
 pub enum TypeRecord {
-    /// Describes a pointer to another type.
     #[declio(id = "constants::LF_POINTER.into()")]
     Pointer {
         referent: TypeIndex,
@@ -21,13 +20,11 @@ pub enum TypeRecord {
         #[declio(skip_if = "!properties.mode().is_member_pointer()")]
         containing_class: Option<TypeIndex>,
     },
-    /// Describes a modified type (e.g., const, volatile).
     #[declio(id = "constants::LF_MODIFIER.into()")]
     Modifier {
         modified_type: TypeIndex,
         properties: ModifierProperties,
     },
-    /// Describes a procedure (function) type.
     #[declio(id = "constants::LF_PROCEDURE.into()")]
     Procedure {
         #[declio(with = "codecs::optional_index")]
@@ -37,7 +34,6 @@ pub enum TypeRecord {
         arg_count: u16,
         arg_list: TypeIndex,
     },
-    /// Describes a member function type.
     #[declio(id = "constants::LF_MFUNCTION.into()")]
     MemberFunction {
         #[declio(with = "codecs::optional_index")]
@@ -52,23 +48,19 @@ pub enum TypeRecord {
         arg_list: TypeIndex,
         this_adjustment: i32,
     },
-    /// Describes a label type.
     #[declio(id = "constants::LF_LABEL.into()")]
     Label(LabelType),
-    /// A list of arguments for a procedure.
     #[declio(id = "constants::LF_ARGLIST.into()")]
     ArgList {
         count: u32,
         #[declio(ctx = "(Len(*count as usize), constants::ENDIANESS)")]
         arg_list: Vec<u32>,
     },
-    /// A list of members in a class, struct, or union.
     #[declio(id = "constants::LF_FIELDLIST.into()")]
     FieldList {
         #[declio(with = "codecs::padded_rem_list")]
         fields: Vec<TypeRecord>,
     },
-    /// Describes an array type.
     #[declio(id = "constants::LF_ARRAY.into()")]
     Array {
         element_type: TypeIndex,
@@ -76,25 +68,18 @@ pub enum TypeRecord {
         #[declio(with = "codecs::padded_rem_list")]
         dimensions: Vec<Integer>,
     },
-    /// Describes a class.
     #[declio(id = "constants::LF_CLASS.into()")]
     Class(StructRecord),
-    /// Describes a structure.
     #[declio(id = "constants::LF_STRUCTURE.into()")]
     Struct(StructRecord),
-    /// Describes an interface.
     #[declio(id = "constants::LF_INTERFACE.into()")]
     Interface(StructRecord),
-    /// Describes a union.
     #[declio(id = "constants::LF_UNION.into()")]
     Union(UnionRecord),
-    /// Describes an enumeration.
     #[declio(id = "constants::LF_ENUM.into()")]
     Enum(EnumRecord),
-    /// Contains information about a type server.
     #[declio(id = "constants::LF_TYPESERVER2.into()")]
     TypeServer2 { guid: Guid, age: u32, name: StrBuf },
-    /// Describes a virtual function table.
     #[declio(id = "constants::LF_VFTABLE.into()")]
     VFTable {
         complete_class: TypeIndex,
@@ -103,49 +88,39 @@ pub enum TypeRecord {
         name_count: u32,
         // todo method_names
     },
-    /// Describes the shape of a virtual function table.
     #[declio(id = "constants::LF_VTSHAPE.into()")]
     VfTableShape(VftShape),
-    /// Describes a bitfield member of a struct/class.
     #[declio(id = "constants::LF_BITFIELD.into()")]
     BitField {
         field_type: TypeIndex,
         bit_size: u8,
         bit_offset: u8,
     },
-    /// Base class of a class or struct.
     #[declio(id = "constants::LF_BCLASS.into()")]
     BaseClass(BaseClasRecord),
-    /// Base interface of a class or struct.
     #[declio(id = "constants::LF_BINTERFACE.into()")]
     BaseInterface(BaseClasRecord),
-    /// Virtual base class of a class or struct.
     #[declio(id = "constants::LF_VBCLASS.into()")]
     VirtualBaseClass(VirtualBaseClasRecord),
-    /// Indirect virtual base class.
     #[declio(id = "constants::LF_IVBCLASS.into()")]
     IndirectVirtualBaseClass(VirtualBaseClasRecord),
-    /// Pointer to a virtual function table.
     #[declio(id = "constants::LF_VFUNCTAB.into()")]
     VFPtr {
         reserved: [u8; 2],
         table_type: TypeIndex,
     },
-    /// A static data member of a class.
     #[declio(id = "constants::LF_STMEMBER.into()")]
     StaticDataMember {
         properties: MemberProperties,
         field_type: TypeIndex,
         name: StrBuf,
     },
-    /// An overloaded method.
     #[declio(id = "constants::LF_METHOD.into()")]
     OverloadedMethod {
         count: u16,
         method_list: TypeIndex,
         name: StrBuf,
     },
-    /// A standard data member of a class, struct, or union.
     #[declio(id = "constants::LF_MEMBER.into()")]
     DataMember {
         properties: MemberProperties,
@@ -154,14 +129,12 @@ pub enum TypeRecord {
         offset: Integer,
         name: StrBuf,
     },
-    /// A nested type definition.
     #[declio(id = "constants::LF_NESTTYPE.into()")]
     NestedType {
         properties: MemberProperties,
         nested_type: TypeIndex,
         name: StrBuf,
     },
-    /// A single method of a class.
     #[declio(id = "constants::LF_ONEMETHOD.into()")]
     OneMethod {
         properties: MemberProperties,
@@ -170,28 +143,24 @@ pub enum TypeRecord {
         vtable_offset: Option<u32>,
         name: StrBuf,
     },
-    /// An enumerator value.
     #[declio(id = "constants::LF_ENUMERATE.into()")]
     Enumerator {
         properties: MemberProperties,
         value: Integer,
         name: StrBuf,
     },
-    /// A continuation of a field list.
     #[declio(id = "constants::LF_INDEX.into()")]
     ListContinuation(TypeIndex),
-    /// A list of methods.
     #[declio(id = "constants::LF_METHODLIST.into()")]
     MethodList {
         #[declio(with = "codecs::padded_rem_list")]
         methods: Vec<MethodListEntry>,
     },
 }
-/// CodeView ID Record, representing items like function IDs, string IDs, etc.
+
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS", id_type = "LittleEndian<u16>")]
 pub enum IdRecord {
-    /// Identifies a function.
     #[declio(id = "constants::LF_FUNC_ID.into()")]
     FuncId {
         #[declio(with = "codecs::optional_index")]
@@ -202,39 +171,37 @@ pub enum IdRecord {
     /// Identifies a member function.
     #[declio(id = "constants::LF_MFUNC_ID.into()")]
     MemberFuncId {
+        /// Type of the class.
         class_type: TypeIndex,
+        /// Function type.
         function_type: TypeIndex,
+        /// Name of the member function.
         name: StrBuf,
     },
-    /// Contains build information.
     #[declio(id = "constants::LF_BUILDINFO.into()")]
     BuildInfo {
         count: u16,
         #[declio(ctx = "(Len(*count as usize), constants::ENDIANESS)")]
         arguments: Vec<u32>,
     },
-    /// A list of strings.
     #[declio(id = "constants::LF_SUBSTR_LIST.into()")]
     StringList {
         count: u32,
         #[declio(ctx = "(Len(*count as usize), constants::ENDIANESS)")]
         strings: Vec<TypeIndex>,
     },
-    /// An ID for a string.
     #[declio(id = "constants::LF_STRING_ID.into()")]
     StringId {
         #[declio(with = "codecs::optional_index")]
         id: Option<TypeIndex>,
         string: StrBuf,
     },
-    /// Source line information for a user-defined type.
     #[declio(id = "constants::LF_UDT_SRC_LINE.into()")]
     UdtSourceLine {
         udt: TypeIndex,
         source_file: TypeIndex,
         line_number: u32,
     },
-    /// Module source line information for a user-defined type.
     #[declio(id = "constants::LF_UDT_MOD_SRC_LINE.into()")]
     UdtModSourceLine {
         udt: TypeIndex,
@@ -243,79 +210,119 @@ pub enum IdRecord {
         module: u16,
     },
 }
-/// Record describing a struct, class, or interface.
+
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
+/// Record describing a struct, class, or interface.
 pub struct StructRecord {
+    /// Number of members.
     pub member_count: u16,
+    /// Class properties.
     pub properties: ClassProperties,
+    /// Field list type index.
     #[declio(with = "codecs::optional_index")]
     pub field_list: Option<TypeIndex>,
+    /// Derivation list type index.
     #[declio(with = "codecs::optional_index")]
     pub derivation_list: Option<TypeIndex>,
+    /// VTable shape type index.
     #[declio(with = "codecs::optional_index")]
     pub vtable_shape: Option<TypeIndex>,
+    /// Size in bytes.
     pub size: Integer,
+    /// Name of the struct.
     pub name: StrBuf,
+    /// Unique name of the struct.
     #[declio(skip_if = "!properties.has_unique_name()")]
     pub unique_name: StrBuf,
 }
-/// Record describing a union.
+
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
+/// Record describing a union.
 pub struct UnionRecord {
+    /// Number of members.
     pub member_count: u16,
+    /// Class properties.
     pub properties: ClassProperties,
+    /// Field list type index.
     #[declio(with = "codecs::optional_index")]
     pub field_list: Option<TypeIndex>,
+    /// Size in bytes.
     pub size: Integer,
+    /// Name of the union.
     pub name: StrBuf,
+    /// Unique name of the union.
     #[declio(skip_if = "!properties.has_unique_name()")]
     pub unique_name: StrBuf,
 }
+
+#[derive(Debug, Encode, Decode, EncodedSize)]
+#[declio(ctx_is = "constants::ENDIANESS")]
 /// Record describing an enumeration.
-#[derive(Debug, Encode, Decode, EncodedSize)]
-#[declio(ctx_is = "constants::ENDIANESS")]
 pub struct EnumRecord {
+    /// Number of members.
     pub member_count: u16,
+    /// Class properties.
     pub properties: ClassProperties,
+    /// Underlying integer type.
     pub underlying_type: TypeIndex,
+    /// Field list type index.
     pub field_list: TypeIndex,
+    /// Name of the enum.
     pub name: StrBuf,
+    /// Unique name of the enum.
     #[declio(skip_if = "!properties.has_unique_name()")]
     pub unique_name: StrBuf,
 }
-/// Record describing a base class.
+
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
+/// Record describing a base class.
 pub struct BaseClasRecord {
+    /// Member properties.
     pub properties: MemberProperties,
+    /// Base class type index.
     pub base_type: TypeIndex,
+    /// Offset in the parent class.
     pub offset: Integer,
 }
-/// Record describing a virtual base class.
+
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
+/// Record describing a virtual base class.
 pub struct VirtualBaseClasRecord {
+    /// Member properties.
     pub properties: MemberProperties,
+    /// Base class type index.
     pub base_type: TypeIndex,
+    /// Type index of the virtual base pointer.
     pub vbptr_type: TypeIndex,
+    /// Offset of the virtual base pointer.
     pub vbptr_offset: Integer,
+    /// Index in the vtable.
     pub vtable_index: Integer,
 }
-/// Entry in a method list.
+
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
+/// Entry in a method list.
 pub struct MethodListEntry {
+    /// Member properties.
     pub properties: MemberProperties,
+    /// Reserved padding.
     pub reserved: [u8; 2],
+    /// Type index of the method.
     pub method_type: TypeIndex,
+    /// Optional offset in the vtable.
     #[declio(skip_if = "!properties.method_kind().is_introducing()")]
     pub vtable_offset: Option<u32>,
 }
-/// Shape of a virtual function table (slots).
+
 #[derive(Debug)]
+/// Shape of a virtual function table (slots).
 pub struct VftShape {
+    /// Kinds of vtable slots.
     pub slots: Vec<VFTableSlotKind>,
 }
 
@@ -353,27 +360,39 @@ impl<Ctx> EncodedSize<Ctx> for VftShape {
         u16::default_encoded_size(()) + self.slots.len().div_ceil(2)
     }
 }
-/// Attributes of a pointer (kind, mode, modifiers, etc).
+
 #[bitfield(bits = 32)]
 #[derive(Debug, Clone, Copy)]
+/// Attributes of a pointer (kind, mode, modifiers, etc).
 pub struct PointerProperties {
+    /// Kind of pointer.
     pub kind: PointerKind,
+    /// Mode of the pointer.
     pub mode: PointerMode,
+    /// Is flat 32-bit pointer.
     pub is_flat32: bool,
+    /// Is volatile.
     pub is_volatile: bool,
+    /// Is const.
     pub is_const: bool,
+    /// Is unaligned.
     pub is_unaligned: bool,
+    /// Is restricted.
     pub is_restrict: bool,
+    /// Size of the pointer.
     pub size: B6,
+    /// Is MOCOM.
     pub is_mocom: bool,
+    /// Is an L-value reference.
     pub is_lref: bool,
+    /// Is an R-value reference.
     pub is_rref: bool,
     #[skip]
     unused: B10,
 }
 
 impl_bitfield_codecs!(PointerProperties);
-/// Underlying kind of a pointer (e.g., Near32, Far64).
+
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 5]
 pub enum PointerKind {
@@ -393,7 +412,7 @@ pub enum PointerKind {
 }
 
 impl_bitfield_specifier_codecs!(PointerKind);
-/// Mode of a pointer (e.g., pointer, L-value reference, member data pointer).
+
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 3]
 pub enum PointerMode {
@@ -411,70 +430,99 @@ impl PointerMode {
 }
 
 impl_bitfield_specifier_codecs!(PointerMode);
-/// Attributes for a modified type (const, volatile, unaligned).
+
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]
+/// Attributes for a modified type (const, volatile, unaligned).
 pub struct ModifierProperties {
+    /// Is const.
     pub is_const: bool,
+    /// Is volatile.
     pub is_volatile: bool,
+    /// Is unaligned.
     pub is_unaligned: bool,
     #[skip]
     unused: B13,
 }
 
 impl_bitfield_codecs!(ModifierProperties);
-/// Attributes for a function (e.g., constructor, cxx return UDT).
+
 #[bitfield(bits = 8)]
 #[derive(Debug, Clone, Copy)]
+/// Attributes for a function (e.g., constructor, cxx return UDT).
 pub struct FunctionProperties {
+    /// Returns a C++ UDT.
     pub is_cxx_return_udt: bool,
+    /// Is a constructor.
     pub is_constructor: bool,
+    /// Is a constructor with virtual bases.
     pub is_constructor_with_virtual_bases: bool,
     #[skip]
     unused: B5,
 }
 
 impl_bitfield_codecs!(FunctionProperties);
-/// Properties of a class/struct (e.g., forward reference, scoped, has constructor).
+
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]
+/// Properties of a class/struct (e.g., forward reference, scoped, has constructor).
 pub struct ClassProperties {
+    /// Is packed.
     pub is_packed: bool,
+    /// Has constructor or destructor.
     pub has_constructor_or_deconstructor: bool,
+    /// Has overloaded operator.
     pub has_overloaded_operator: bool,
+    /// Is nested.
     pub is_nested: bool,
+    /// Contains nested class.
     pub contains_nested: bool,
+    /// Has overloaded assignment operator.
     pub has_overloaded_assignment: bool,
+    /// Has conversion operator.
     pub has_conversion: bool,
+    /// Is a forward reference.
     pub is_forward_ref: bool,
+    /// Is scoped.
     pub is_scoped: bool,
+    /// Has a unique name.
     pub has_unique_name: bool,
+    /// Is sealed.
     pub is_sealed: bool,
     #[skip]
     unused: B2,
+    /// Is intrinsic.
     pub is_intrinsic: bool,
     #[skip]
     unused: B2,
 }
 
 impl_bitfield_codecs!(ClassProperties);
-/// Properties of a member (access level, static, virtual).
+
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]
+/// Properties of a member (access level, static, virtual).
 pub struct MemberProperties {
+    /// Access level.
     pub access: MemberAccess,
+    /// Kind of method.
     pub method_kind: MethodKind,
+    /// Is pseudo.
     pub is_pseudo: bool,
+    /// Cannot be inherited.
     pub is_no_inherit: bool,
+    /// Cannot be constructed.
     pub is_no_construct: bool,
+    /// Is compiler generated.
     pub is_compiler_generated: bool,
+    /// Is sealed.
     pub is_sealed: bool,
     #[skip]
     unused: B6,
 }
 
 impl_bitfield_codecs!(MemberProperties);
-/// Calling convention of a function (e.g., NearC, ThisCall).
+
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 8]
 pub enum CallingConvention {
@@ -505,7 +553,7 @@ pub enum CallingConvention {
 }
 
 impl_bitfield_specifier_codecs!(CallingConvention);
-/// Type of label (Near or Far).
+
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 16]
 pub enum LabelType {
@@ -514,7 +562,7 @@ pub enum LabelType {
 }
 
 impl_bitfield_specifier_codecs!(LabelType);
-/// Type of slot in a virtual function table.
+
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 4]
 pub enum VFTableSlotKind {
@@ -528,7 +576,7 @@ pub enum VFTableSlotKind {
 }
 
 impl_bitfield_specifier_codecs!(VFTableSlotKind);
-/// Access level for a class member (Private, Protected, Public).
+
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 2]
 pub enum MemberAccess {
@@ -539,7 +587,7 @@ pub enum MemberAccess {
 }
 
 impl_bitfield_specifier_codecs!(MemberAccess);
-/// Kind of a method (Virtual, Static, etc).
+
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 3]
 pub enum MethodKind {
@@ -559,7 +607,7 @@ impl MethodKind {
 }
 
 impl_bitfield_specifier_codecs!(MethodKind);
-/// Built-in types (e.g., Void, I32, F64).
+
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 32]
 pub enum BuiltinType {
@@ -623,7 +671,7 @@ impl From<BuiltinType> for TypeIndex {
         TypeIndex::try_from(tp as u32).unwrap()
     }
 }
-/// Error type for when a TypeIndex is not a builtin type.
+
 #[derive(Debug)]
 pub struct NonBuiltinType;
 
