@@ -161,8 +161,10 @@ impl TypeHash {
     {
         input.seek(io::SeekFrom::Start(layout.hash_values.offset.into()))?;
         let num_hash_values = layout.hash_values.length / 4;
-        let hash_values =
-            Decode::decode((Len(num_hash_values as usize), constants::ENDIANESS), &mut input)?;
+        let hash_values = Decode::decode(
+            (Len(num_hash_values as usize), constants::ENDIANESS),
+            &mut input,
+        )?;
         input.seek(io::SeekFrom::Start(layout.index_offsets.offset.into()))?;
         let num_index_offsets = layout.index_offsets.length / 8;
         let index_offsets = Decode::decode(
@@ -186,7 +188,8 @@ impl TypeHash {
     where
         W: io::Write + io::Seek,
     {
-        let hash_values = EmbeddedBuf::from_encoded(&self.hash_values, (constants::ENDIANESS,), output)?;
+        let hash_values =
+            EmbeddedBuf::from_encoded(&self.hash_values, (constants::ENDIANESS,), output)?;
         let index_offsets =
             EmbeddedBuf::from_encoded(&self.index_offsets, (constants::ENDIANESS,), output)?;
         let hash_adjusters = EmbeddedBuf::from_encoded(&self.hash_adjusters, (), output)?;

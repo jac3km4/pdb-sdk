@@ -71,7 +71,9 @@ impl NamedStreams {
     /// Iterates over the named streams.
     pub fn iter(&self) -> impl Iterator<Item = (&str, StreamIndex)> {
         self.offset_index_map.entries().iter().filter_map(|kv| {
-            let v = &self.name_buffer[kv.key as usize..].split(|&n| n == 0).next()?;
+            let v = &self.name_buffer[kv.key as usize..]
+                .split(|&n| n == 0)
+                .next()?;
             let str = std::str::from_utf8(v).ok()?;
             Some((str, StreamIndex(kv.val as u16)))
         })

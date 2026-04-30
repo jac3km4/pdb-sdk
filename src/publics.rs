@@ -38,7 +38,10 @@ impl Publics {
         let header = PublicsHeader::decode((), &mut input)?;
         let globals = SymbolMap::read_with_header(&mut input)?;
         let address_count = header.addr_map / 4;
-        let address_map = Decode::decode((Len(address_count as usize), constants::ENDIANESS), &mut input)?;
+        let address_map = Decode::decode(
+            (Len(address_count as usize), constants::ENDIANESS),
+            &mut input,
+        )?;
         let thunk_map = Decode::decode(
             (Len(header.num_thunks as usize), constants::ENDIANESS),
             &mut input,

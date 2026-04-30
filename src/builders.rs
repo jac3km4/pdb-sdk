@@ -15,10 +15,12 @@ use crate::publics::Publics;
 use crate::result::Result;
 use crate::strings::StringsBuilder;
 use crate::symbol_map::Globals;
-use crate::types::{IndexOffset, TypeHash, TypeStreamHeader, FIRST_NON_BUILTIN_TYPE, HASH_BUCKET_NUMBER};
+use crate::types::{
+    IndexOffset, TypeHash, TypeStreamHeader, FIRST_NON_BUILTIN_TYPE, HASH_BUCKET_NUMBER,
+};
 use crate::utils::{align_to, StrBuf};
 use crate::{
-    codecs, constants, BuiltinStream, Guid, MsfStreamLayout, StreamIndex, SymbolOffset, TypeIndex
+    codecs, constants, BuiltinStream, Guid, MsfStreamLayout, StreamIndex, SymbolOffset, TypeIndex,
 };
 
 #[derive(Debug, Default)]
@@ -72,7 +74,9 @@ impl PdbBuilder {
         let num_streams = allocator.streams.len() as u32;
         num_streams.encode(constants::ENDIANESS, &mut directory)?;
         for stream in &allocator.streams {
-            stream.byte_size.encode(constants::ENDIANESS, &mut directory)?;
+            stream
+                .byte_size
+                .encode(constants::ENDIANESS, &mut directory)?;
         }
         for stream in &allocator.streams {
             stream.blocks.encode(((),), &mut directory)?;
@@ -194,7 +198,8 @@ impl DbiBuilder {
         self.debug_streams.push(StreamIndex(u16::MAX)); // framedata
         self.debug_streams.push(StreamIndex(u16::MAX)); // original_section_headers
 
-        let modi_stream_size = codecs::padded_rem_list::encoded_size(&modules, constants::ENDIANESS) as u32;
+        let modi_stream_size =
+            codecs::padded_rem_list::encoded_size(&modules, constants::ENDIANESS) as u32;
 
         let header = DbiHeader {
             signature: DbiSignature,
@@ -317,7 +322,11 @@ impl InfoBuilder {
             guid: self.guid,
         };
         header.encode((), &mut writer)?;
-        let buffer_size: u32 = self.named_streams.iter().map(|(_, s)| s.len() as u32 + 1).sum();
+        let buffer_size: u32 = self
+            .named_streams
+            .iter()
+            .map(|(_, s)| s.len() as u32 + 1)
+            .sum();
         buffer_size.encode(constants::ENDIANESS, &mut writer)?;
 
         let mut offsets = Vec::with_capacity(self.named_streams.len());
@@ -356,7 +365,8 @@ where
         let size = u16::default_encoded_size(()) + record.encoded_size(());
         self.offset += align_to(size, RECORD_ALIGNMENT);
         self.records.push(record);
-        self.hashes.push(hash_v1(name.as_bytes()) % HASH_BUCKET_NUMBER);
+        self.hashes
+            .push(hash_v1(name.as_bytes()) % HASH_BUCKET_NUMBER);
 
         let index = TypeIndex::try_from(self.index).unwrap();
         self.index += 1;
@@ -374,7 +384,8 @@ where
             hash_adjusters: Table::default(),
         };
 
-        let last_index = TypeIndex::try_from(FIRST_NON_BUILTIN_TYPE + self.records.len() as u32).unwrap();
+        let last_index =
+            TypeIndex::try_from(FIRST_NON_BUILTIN_TYPE + self.records.len() as u32).unwrap();
 
         let mut type_buffer = std::io::Cursor::new(vec![]);
 
@@ -390,7 +401,8 @@ where
         let hash_stream = allocator.allocate(writer.finish()?);
 
         let mut writer = DefaultMsfStreamWriter::new(sink)?;
-        let header = TypeStreamHeader::new(last_index, self.offset as u32, hash_stream, hash_layout);
+        let header =
+            TypeStreamHeader::new(last_index, self.offset as u32, hash_stream, hash_layout);
         header.encode((), &mut writer)?;
 
         writer.write_all(&type_buffer.into_inner())?;
@@ -525,7 +537,11 @@ impl ModuleBuilder {
         self
     }
 
-    fn commit<S>(self, sink: &mut S, allocator: &mut StreamAllocator) -> Result<(DbiModule, Vec<String>)>
+    fn commit<S>(
+        self,
+        sink: &mut S,
+        allocator: &mut StreamAllocator,
+    ) -> Result<(DbiModule, Vec<String>)>
     where
         S: io::Write + io::Seek,
     {

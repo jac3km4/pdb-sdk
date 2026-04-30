@@ -12,7 +12,8 @@ use crate::result::{Error, Result};
 use crate::strings::Strings;
 use crate::utils::StrBuf;
 use crate::{
-    codecs, constants, impl_bitfield_codecs, impl_bitfield_specifier_codecs, BufMsfStream, StreamIndex
+    codecs, constants, impl_bitfield_codecs, impl_bitfield_specifier_codecs, BufMsfStream,
+    StreamIndex,
 };
 
 magic_bytes! {

@@ -6,7 +6,9 @@ use std::{env, io};
 use anyhow::{bail, Context, Result};
 use assert_matches::assert_matches;
 use pdb_sdk::builders::PdbBuilder;
-use pdb_sdk::codeview::symbols::{Constant, ProcedureProperties, Public, PublicProperties, SymbolRecord};
+use pdb_sdk::codeview::symbols::{
+    Constant, ProcedureProperties, Public, PublicProperties, SymbolRecord,
+};
 use pdb_sdk::codeview::types::{BuiltinType, IdRecord, PointerKind, PointerProperties, TypeRecord};
 use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::dbi::SectionHeader;
@@ -29,7 +31,10 @@ fn roundtrip() -> Result<()> {
 
     let hash = pdb.get_tpi_hash(&tpi)?;
     assert_matches!(
-        tpi.record(hash.get_index("pointer_type").context("missing pointer_type")?),
+        tpi.record(
+            hash.get_index("pointer_type")
+                .context("missing pointer_type")?
+        ),
         Some(TypeRecord::Pointer { .. })
     );
 
@@ -80,7 +85,10 @@ fn read_llvm_pdb() -> Result<()> {
     );
 
     let module = pdb.get_module(&dbi.modules()[1])?;
-    assert_matches!(module.symbols().first(), Some(SymbolRecord::ObjectName { .. }));
+    assert_matches!(
+        module.symbols().first(),
+        Some(SymbolRecord::ObjectName { .. })
+    );
 
     Ok(())
 }
@@ -96,8 +104,8 @@ fn generate_and_read_pdb_from_yaml() {
         let temp_pdb = env::temp_dir().join("temp_generated.pdb");
         yaml2pdb(&pdbutil, path, &temp_pdb).expect("failed to convert yaml to pdb");
 
-        let mut pdb =
-            PdbFile::open(File::open(&temp_pdb).expect("failed to open pdb")).expect("failed to parse pdb");
+        let mut pdb = PdbFile::open(File::open(&temp_pdb).expect("failed to open pdb"))
+            .expect("failed to parse pdb");
 
         insta::assert_debug_snapshot!("info", pdb.get_info().unwrap());
 
@@ -143,18 +151,24 @@ fn yaml2pdb(pdbutil: &str, yaml_path: &Path, pdb_path: &Path) -> Result<()> {
 
 fn write_dummy() -> Result<io::Cursor<Vec<u8>>> {
     let mut builder = PdbBuilder::default();
-    builder.tpi().add("pointer_type", TypeRecord::Pointer {
-        referent: BuiltinType::I64.into(),
-        properties: PointerProperties::new()
-            .with_is_const(true)
-            .with_is_volatile(true)
-            .with_kind(PointerKind::Near64),
-        containing_class: None,
-    });
-    builder.ipi().add("string_id", IdRecord::StringId {
-        id: None,
-        string: StrBuf::new("test"),
-    });
+    builder.tpi().add(
+        "pointer_type",
+        TypeRecord::Pointer {
+            referent: BuiltinType::I64.into(),
+            properties: PointerProperties::new()
+                .with_is_const(true)
+                .with_is_volatile(true)
+                .with_kind(PointerKind::Near64),
+            containing_class: None,
+        },
+    );
+    builder.ipi().add(
+        "string_id",
+        IdRecord::StringId {
+            id: None,
+            string: StrBuf::new("test"),
+        },
+    );
 
     let mut sym_builder = builder.dbi().symbols();
     sym_builder.add(Public {

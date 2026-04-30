@@ -2,9 +2,11 @@ use std::fs::File;
 use std::io;
 
 use pdb_sdk::builders::PdbBuilder;
-use pdb_sdk::codeview::symbols::{Constant, ProcedureProperties, Public, PublicProperties, SymbolRecord};
+use pdb_sdk::codeview::symbols::{
+    Constant, ProcedureProperties, Public, PublicProperties, SymbolRecord,
+};
 use pdb_sdk::codeview::types::{
-    BuiltinType, IdRecord, MemberProperties, PointerKind, PointerProperties, TypeRecord
+    BuiltinType, IdRecord, MemberProperties, PointerKind, PointerProperties, TypeRecord,
 };
 use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::result::Result;
@@ -13,26 +15,35 @@ use pdb_sdk::Integer;
 
 fn main() -> Result<()> {
     let mut builder = PdbBuilder::default();
-    builder.tpi().add("pointer_type", TypeRecord::Pointer {
-        referent: BuiltinType::I64.into(),
-        properties: PointerProperties::new()
-            .with_is_const(true)
-            .with_is_volatile(true)
-            .with_kind(PointerKind::Near64),
-        containing_class: None,
-    });
-    builder.tpi().add("pointer_type", TypeRecord::FieldList {
-        fields: vec![TypeRecord::DataMember {
-            properties: MemberProperties::new().with_is_pseudo(true),
-            field_type: Some(BuiltinType::I16.into()),
-            offset: Integer::I16(0),
-            name: StrBuf::new("field"),
-        }],
-    });
-    builder.ipi().add("string_id", IdRecord::StringId {
-        id: None,
-        string: StrBuf::new("test"),
-    });
+    builder.tpi().add(
+        "pointer_type",
+        TypeRecord::Pointer {
+            referent: BuiltinType::I64.into(),
+            properties: PointerProperties::new()
+                .with_is_const(true)
+                .with_is_volatile(true)
+                .with_kind(PointerKind::Near64),
+            containing_class: None,
+        },
+    );
+    builder.tpi().add(
+        "pointer_type",
+        TypeRecord::FieldList {
+            fields: vec![TypeRecord::DataMember {
+                properties: MemberProperties::new().with_is_pseudo(true),
+                field_type: Some(BuiltinType::I16.into()),
+                offset: Integer::I16(0),
+                name: StrBuf::new("field"),
+            }],
+        },
+    );
+    builder.ipi().add(
+        "string_id",
+        IdRecord::StringId {
+            id: None,
+            string: StrBuf::new("test"),
+        },
+    );
 
     let mut sym_builder = builder.dbi().symbols();
     sym_builder.add(Public {

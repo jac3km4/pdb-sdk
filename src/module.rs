@@ -50,7 +50,8 @@ impl Module {
             symbols.push(PrefixedRecord::decode(&mut sym_stream)?.into_inner());
         }
 
-        let c11_bytes = <Bytes<'_>>::decode(Len(layout.c11_bytes as usize), &mut source)?.into_vec();
+        let c11_bytes =
+            <Bytes<'_>>::decode(Len(layout.c11_bytes as usize), &mut source)?.into_vec();
 
         let mut c13_records = vec![];
         let mut c13_stream = source.by_ref().take(layout.c13_bytes.into());
@@ -58,7 +59,8 @@ impl Module {
             c13_records.push(DebugSubsectionEntry::decode((), &mut c13_stream)?);
         }
 
-        let global_ref_bytes = <Bytes<'_, u32>>::decode(constants::ENDIANESS, &mut source)?.into_vec();
+        let global_ref_bytes =
+            <Bytes<'_, u32>>::decode(constants::ENDIANESS, &mut source)?.into_vec();
 
         let res = Self {
             symbols,
@@ -69,7 +71,10 @@ impl Module {
         Ok(res)
     }
 
-    pub(crate) fn write<S, const N: u32>(self, sink: &mut MsfStreamWriter<'_, S, N>) -> Result<ModuleLayout>
+    pub(crate) fn write<S, const N: u32>(
+        self,
+        sink: &mut MsfStreamWriter<'_, S, N>,
+    ) -> Result<ModuleLayout>
     where
         S: io::Write + io::Seek,
     {
@@ -162,7 +167,10 @@ impl_bitfield_specifier_codecs!(DebugSubsectionRecordType);
 
 /// A Debug Subsection Record.
 #[derive(Debug, Encode, Decode, EncodedSize)]
-#[declio(ctx = "record_type: DebugSubsectionRecordType", id_expr = "record_type")]
+#[declio(
+    ctx = "record_type: DebugSubsectionRecordType",
+    id_expr = "record_type"
+)]
 pub enum DebugSubsectionRecord {
     #[declio(id = "DebugSubsectionRecordType::Lines")]
     Lines {
