@@ -2,10 +2,10 @@ use std::io::{self, Read};
 
 use derive_getters::Getters;
 
-use crate::codeview::symbols::SymbolRecord;
-use crate::codeview::PrefixedRecord;
-use crate::result::Result;
 use crate::BufMsfStream;
+use crate::codeview::PrefixedRecord;
+use crate::codeview::symbols::SymbolRecord;
+use crate::result::Result;
 
 #[derive(Debug, Getters)]
 pub struct Symbols {

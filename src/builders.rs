@@ -7,7 +7,7 @@ use crate::codeview::symbols::{Public, SymbolRecord};
 use crate::codeview::types::{IdRecord, TypeRecord};
 use crate::codeview::{PrefixedRecord, RECORD_ALIGNMENT};
 use crate::dbi::*;
-use crate::hash::{hash_v1, Table};
+use crate::hash::{Table, hash_v1};
 use crate::info::{PdbFeature, PdbInfoHeader, PdbVersion};
 use crate::module::{DebugSubsectionEntry, Module};
 use crate::msf::*;
@@ -16,11 +16,11 @@ use crate::result::Result;
 use crate::strings::StringsBuilder;
 use crate::symbol_map::Globals;
 use crate::types::{
-    IndexOffset, TypeHash, TypeStreamHeader, FIRST_NON_BUILTIN_TYPE, HASH_BUCKET_NUMBER,
+    FIRST_NON_BUILTIN_TYPE, HASH_BUCKET_NUMBER, IndexOffset, TypeHash, TypeStreamHeader,
 };
-use crate::utils::{align_to, StrBuf};
+use crate::utils::{StrBuf, align_to};
 use crate::{
-    codecs, constants, BuiltinStream, Guid, MsfStreamLayout, StreamIndex, SymbolOffset, TypeIndex,
+    BuiltinStream, Guid, MsfStreamLayout, StreamIndex, SymbolOffset, TypeIndex, codecs, constants,
 };
 
 #[derive(Debug, Default)]

@@ -1,19 +1,19 @@
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use object::{LittleEndian as LE, Object, ObjectSection};
+use pdb_sdk::Guid;
 use pdb_sdk::builders::{ModuleBuilder, PdbBuilder};
+use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::codeview::symbols::{
     Procedure, ProcedureProperties, Public, PublicProperties, SymbolRecord,
 };
 use pdb_sdk::codeview::types::{
     CallingConvention, FunctionProperties, ModifierProperties, PointerProperties, TypeRecord,
 };
-use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::dbi::{SectionContrib, SectionHeader};
 use pdb_sdk::utils::StrBuf;
-use pdb_sdk::Guid;
 
 fn main() -> Result<()> {
     let exe_path = PathBuf::from(

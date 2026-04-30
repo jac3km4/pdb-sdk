@@ -8,7 +8,7 @@ use derive_getters::Getters;
 use crate::codeview::symbols::Public;
 use crate::result::Result;
 use crate::symbol_map::SymbolMap;
-use crate::{constants, SymbolOffset};
+use crate::{SymbolOffset, constants};
 
 #[derive(Debug, Getters)]
 pub struct Publics {

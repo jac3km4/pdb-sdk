@@ -2,12 +2,12 @@ use std::fmt;
 use std::io::Write;
 
 use declio::util::{Bytes, PrefixVec};
-use declio::{magic_bytes, Decode, Encode, EncodedSize};
+use declio::{Decode, Encode, EncodedSize, magic_bytes};
 use modular_bitfield::Specifier;
 
 use crate::hash::hash_v1;
 use crate::result::Result;
-use crate::{constants, impl_bitfield_specifier_codecs, StringOffset};
+use crate::{StringOffset, constants, impl_bitfield_specifier_codecs};
 
 magic_bytes! {
     #[derive(Debug)]

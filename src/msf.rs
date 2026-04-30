@@ -1,10 +1,10 @@
 use std::fmt;
 use std::io::{self, Read};
 
-use declio::{magic_bytes, Decode, Encode, EncodedSize};
+use declio::{Decode, Encode, EncodedSize, magic_bytes};
 
 use crate::result::Result;
-use crate::{constants, BufMsfStream};
+use crate::{BufMsfStream, constants};
 
 pub(crate) const DEFAULT_BLOCK_SIZE: u32 = 4096;
 pub(crate) const EMPTY_BLOCK: &[u8] = &[0; DEFAULT_BLOCK_SIZE as usize];
