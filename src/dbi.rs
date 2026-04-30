@@ -50,7 +50,8 @@ impl DbiStream {
         let mut sect_contr_stream = reader.by_ref().take(header.sec_contr_stream_size.into());
         let mut section_contribs = vec![];
         if sect_contr_stream.limit() > 0 {
-            let version = SectionContribVersion::decode(constants::ENDIANESS, &mut sect_contr_stream)?;
+            let version =
+                SectionContribVersion::decode(constants::ENDIANESS, &mut sect_contr_stream)?;
             while sect_contr_stream.limit() > 0 {
                 section_contribs.push(SectionContrib::decode((), &mut sect_contr_stream)?);
                 if version == SectionContribVersion::V2 {
