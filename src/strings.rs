@@ -16,7 +16,6 @@ magic_bytes! {
 
 /// Represents the PDB String Table (or `/names` stream).
 /// It contains a deduplicated table of strings mapped to their offsets.
-/// Analogous to `PDBStringTable` in LLVM.
 #[derive(Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct Strings {
@@ -30,6 +29,7 @@ pub struct Strings {
 }
 
 impl Strings {
+    /// Gets a string from the string table given an offset.
     pub fn get(&self, offset: StringOffset) -> Option<&str> {
         let str = &self.bytes[offset.0 as usize..].split(|&n| n == 0).next()?;
         str::from_utf8(str).ok()
@@ -64,6 +64,7 @@ pub(crate) struct StringsBuilder {
 
 impl StringsBuilder {
     #[allow(unused)]
+    /// Adds a string to the string table builder.
     pub fn add(&mut self, str: &str) -> Result<()> {
         let offset = self.bytes.len();
         self.bytes.write_all(str.as_bytes())?;
@@ -72,6 +73,7 @@ impl StringsBuilder {
         Ok(())
     }
 
+    /// Builds the `Strings` table.
     pub fn build(self) -> Strings {
         let buckets = bucket_counts::get_bucket_count(self.offsets.len() as u32);
         let mut ids = vec![0; buckets as usize];
@@ -141,6 +143,7 @@ mod bucket_counts {
         }
     }
 
+    /// Gets the bucket count for a given number of strings.
     pub fn get_bucket_count(n: u32) -> u32 {
         let idx = BUCKET_COUNTS
             .binary_search_by_key(&n, |(k, _)| *k)

@@ -171,6 +171,7 @@ impl_bitfield_specifier_codecs!(DebugSubsectionRecordType);
     ctx = "record_type: DebugSubsectionRecordType",
     id_expr = "record_type"
 )]
+/// A debug subsection record, such as line numbers, file checksums, etc.
 pub enum DebugSubsectionRecord {
     #[declio(id = "DebugSubsectionRecordType::Lines")]
     Lines {

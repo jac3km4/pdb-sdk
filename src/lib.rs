@@ -1,15 +1,3 @@
-//! # PDB SDK
-//!
-//! This crate parses and manages Microsoft Program Database (PDB) files.
-//!
-//! ## Major Differences from LLVM
-//!
-//! While this crate draws heavily from the LLVM `DebugInfo/PDB` implementation, it takes several different design choices:
-//!
-//! - **Eager vs. Lazy Parsing:** LLVM often takes a lazy approach using continuous stream readers (e.g., lazily iterating `CVSymbolArray` or evaluating `GSIHashTable` buckets directly from disk). This crate generally prefers eager parsing into structured types in memory (e.g., loading symbols into `Vec`s) via the `declio` crate. This allows safer mutations and easier manipulation in Rust at the cost of higher initial parsing overhead.
-//! - **Declarative Binary IO:** Rather than using manual pointer arithmetic and types like `support::ulittle32_t` with `BinaryStreamReader`, this codebase relies heavily on declarative binary serialization using the `declio` and `modular-bitfield` crates to handle byte arrays and bitfields.
-//! - **Builder Pattern:** To construct PDB files, we use builders (`PdbBuilder`, `DbiBuilder`, etc.) which manage stream allocations under the hood, differing slightly from LLVM's `MSFBuilder` approach.
-
 use std::num::NonZeroU32;
 use std::{fmt, io, mem};
 

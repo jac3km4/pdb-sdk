@@ -28,10 +28,12 @@ pub(crate) struct SuperBlock {
 }
 
 impl SuperBlock {
+    /// Gets the absolute byte offset of the block map.
     pub fn block_map_offset(&self) -> u32 {
         self.block_map_addr.0 * self.block_size
     }
 
+    /// Gets the number of blocks comprising the block map.
     pub fn block_map_blocks(&self) -> u32 {
         self.num_dir_bytes.div_ceil(self.block_size)
     }
@@ -44,6 +46,7 @@ pub(crate) struct MsfStreamLayout {
 }
 
 impl MsfStreamLayout {
+    /// Creates a new MSF stream layout.
     pub fn new(blocks: Vec<BlockIndex>, byte_size: u32) -> Self {
         Self { blocks, byte_size }
     }
@@ -58,6 +61,7 @@ pub(crate) struct MsfStream<'a, R> {
 }
 
 impl<'a, R> MsfStream<'a, R> {
+    /// Creates a new reader for an MSF stream given its layout and block size.
     pub fn new(inner: R, layout: &'a MsfStreamLayout, block_size: u32) -> Self {
         Self {
             inner,
@@ -67,10 +71,12 @@ impl<'a, R> MsfStream<'a, R> {
         }
     }
 
+    /// Returns the length of the stream in bytes.
     pub fn length(&self) -> u32 {
         self.layout.byte_size
     }
 
+    /// Returns whether the stream has reached the end of file.
     pub fn is_eof(&self) -> bool {
         self.layout.byte_size == self.position
     }
@@ -134,6 +140,7 @@ pub(crate) struct MsfStreamWriter<'a, S, const BLOCK_SIZE: u32> {
 }
 
 impl<'a, S, const BLOCK_SIZE: u32> MsfStreamWriter<'a, S, BLOCK_SIZE> {
+    /// Creates a new MSF stream writer.
     pub fn new(sink: &'a mut S) -> io::Result<Self> {
         let res = Self {
             sink,
@@ -143,6 +150,7 @@ impl<'a, S, const BLOCK_SIZE: u32> MsfStreamWriter<'a, S, BLOCK_SIZE> {
         Ok(res)
     }
 
+    /// Gets the current byte position within the stream.
     pub fn position(&self) -> u32 {
         self.position
     }
@@ -165,6 +173,7 @@ impl<'a, S, const BLOCK_SIZE: u32> MsfStreamWriter<'a, S, BLOCK_SIZE> {
         Ok(())
     }
 
+    /// Finishes writing the stream, padding the final block to block boundaries, and returns the layout.
     pub fn finish(self) -> io::Result<MsfStreamLayout>
     where
         S: io::Write + io::Seek,
@@ -203,6 +212,7 @@ where
 pub(crate) struct FreeBlockMap(#[allow(unused)] Vec<u8>);
 
 impl FreeBlockMap {
+    /// Calculates the stream layout for the Free Block Map.
     pub fn layout(main: &SuperBlock) -> MsfStreamLayout {
         let intervals = main.num_blocks.div_ceil(8 * main.block_size);
         let byte_size = main.num_blocks.div_ceil(8);
@@ -215,6 +225,7 @@ impl FreeBlockMap {
         MsfStreamLayout { blocks, byte_size }
     }
 
+    /// Writes the free block map to the sink.
     pub fn write<S>(main: &SuperBlock, sink: &mut S) -> Result<()>
     where
         S: io::Write + io::Seek,
@@ -243,6 +254,7 @@ impl FreeBlockMap {
     }
 
     #[allow(unused)]
+    /// Reads the free block map from the MSF stream.
     pub fn read<R>(mut inner: BufMsfStream<'_, R>) -> Result<FreeBlockMap>
     where
         R: io::Read + io::Seek,
@@ -266,6 +278,7 @@ impl BlockIndex {
 
 #[derive(Clone, Copy, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
+/// Represents the index of a stream within the MSF file.
 pub struct StreamIndex(pub(crate) u16);
 
 impl fmt::Debug for StreamIndex {

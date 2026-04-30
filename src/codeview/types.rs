@@ -560,6 +560,7 @@ pub enum PointerMode {
 }
 
 impl PointerMode {
+    /// Checks if this modifier indicates a member pointer.
     pub fn is_member_pointer(self) -> bool {
         matches!(self, PointerMode::DataMember | PointerMode::MemberFunction)
     }
@@ -786,6 +787,7 @@ pub enum MethodKind {
 }
 
 impl MethodKind {
+    /// Checks if this virtual function table shape indicates an introducing virtual function.
     pub fn is_introducing(self) -> bool {
         matches!(
             self,
