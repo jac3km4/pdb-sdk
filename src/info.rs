@@ -47,9 +47,13 @@ impl PdbInfo {
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct PdbInfoHeader {
+    /// The version of the PDB stream. Typically VC70.
     pub version: PdbVersion,
+    /// A 32-bit time-stamp generated with a call to time(). Often ignored in favor of Guid.
     pub signature: u32,
+    /// The number of times the PDB file has been written.
     pub age: u32,
+    /// A 128-bit identifier guaranteed to be unique across space and time.
     pub guid: Guid,
 }
 
@@ -83,15 +87,25 @@ impl NamedStreams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum PdbVersion {
+    /// Version VC2 (19941610).
     Vc2 = 19941610,
+    /// Version VC4 (19950623).
     Vc4 = 19950623,
+    /// Version VC41 (19950814).
     Vc41 = 19950814,
+    /// Version VC50 (19960307).
     Vc50 = 19960307,
+    /// Version VC98 (19970604).
     Vc98 = 19970604,
+    /// Version VC70Dep (19990604).
     Vc70Dep = 19990604,
+    /// Version VC70 (20000404). The standard observed version.
     Vc70 = 20000404,
+    /// Version VC80 (20030901).
     Vc80 = 20030901,
+    /// Version VC110 (20091201).
     Vc110 = 20091201,
+    /// Version VC140 (20140508).
     Vc140 = 20140508,
 }
 
@@ -101,10 +115,15 @@ impl_bitfield_specifier_codecs!(PdbVersion);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum PdbFeature {
+    /// No features.
     None = 0,
+    /// No other features flags are present. PDB contains an IPI Stream.
     Vc110 = 20091201,
+    /// Other feature flags may be present. PDB contains an IPI Stream.
     Vc140 = 20140508,
+    /// Presumably duplicate types can appear in the TPI Stream.
     NoTypeMerge = 0x4D544F4E,
+    /// Program was linked with /DEBUG:FASTLINK. No TPI/IPI stream; all type info is in the original object files.
     MinimalDebugInfo = 0x494E494D,
 }
 

@@ -80,17 +80,27 @@ impl TypeStream<IdRecord> {
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct TypeStreamHeader {
+    /// The version of the TPI/IPI stream.
     pub version: TypeStreamVersion,
+    /// Size of the header.
     pub header_size: HeaderSize,
+    /// The numeric value of the type index representing the first type record in the stream.
     pub type_index_begin: TypeIndex,
+    /// One greater than the numeric value of the type index representing the last type record.
     pub type_index_end: TypeIndex,
+    /// The number of bytes of type record data following the header.
     pub type_record_bytes: u32,
 
+    /// The index of a stream which contains a list of hashes for every type record.
     pub hash_stream_index: StreamIndex,
+    /// Presumably the index of a stream which contains a separate hash table.
     pub hash_aux_stream_index: StreamIndex,
+    /// The size of a hash value (usually 4 bytes).
     pub hash_key_size: HashKeySize,
+    /// The number of buckets used to generate the hash values in the hash streams.
     pub num_hash_buckets: HashBucketNumber,
 
+    /// Offsets and lengths within the hash stream.
     pub hash_layout: TypeHashLayout,
 }
 
@@ -121,8 +131,11 @@ impl TypeStreamHeader {
 /// The layout of the TPI/IPI Hash Stream.
 #[derive(Debug, Encode, Decode)]
 pub struct TypeHashLayout {
+    /// Hash values embedded buffer.
     hash_values: EmbeddedBuf,
+    /// Index offsets embedded buffer.
     index_offsets: EmbeddedBuf,
+    /// Hash adjusters embedded buffer.
     hash_adjusters: EmbeddedBuf,
 }
 
