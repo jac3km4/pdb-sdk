@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io::{self, Read};
 
 use declio::{magic_bytes, Decode, Encode, EncodedSize};
@@ -263,9 +264,15 @@ impl BlockIndex {
     }
 }
 
-#[derive(Debug, Clone, Copy, Encode, Decode, EncodedSize)]
+#[derive(Clone, Copy, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct StreamIndex(pub(crate) u16);
+
+impl fmt::Debug for StreamIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 impl From<StreamIndex> for u16 {
     fn from(idx: StreamIndex) -> Self {

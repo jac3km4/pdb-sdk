@@ -1,3 +1,4 @@
+use std::fmt;
 use std::io::Write;
 
 use declio::util::{Bytes, PrefixVec};
@@ -13,7 +14,7 @@ magic_bytes! {
     StringsSignature(&0xEFFE_EFFE_u32.to_le_bytes());
 }
 
-#[derive(Debug, Encode, Decode, EncodedSize)]
+#[derive(Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct Strings {
     signature: StringsSignature,
@@ -28,7 +29,27 @@ pub struct Strings {
 impl Strings {
     pub fn get(&self, offset: StringOffset) -> Option<&str> {
         let str = &self.bytes[offset.0 as usize..].split(|&n| n == 0).next()?;
-        std::str::from_utf8(str).ok()
+        str::from_utf8(str).ok()
+    }
+}
+
+impl fmt::Debug for Strings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Strings")
+            .field("hash_version", &self.hash_version)
+            .field(
+                "strings",
+                &fmt::from_fn(|f| {
+                    let mut list = f.debug_list();
+                    for offset in &self.ids {
+                        if let Some(str) = self.get(StringOffset(*offset)) {
+                            list.entry(&str);
+                        }
+                    }
+                    list.finish()
+                }),
+            )
+            .finish()
     }
 }
 

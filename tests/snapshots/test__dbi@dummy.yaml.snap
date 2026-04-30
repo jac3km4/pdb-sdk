@@ -8,21 +8,15 @@ DbiStream {
         signature: DbiSignature,
         version: V70,
         age: 1,
-        global_symbol_stream_index: StreamIndex(
-            65535,
-        ),
+        global_symbol_stream_index: 65535,
         build_number: BuildNumber {
             minor: 11,
             major: 14,
             is_new_format: true,
         },
-        public_symbol_stream_index: StreamIndex(
-            65535,
-        ),
+        public_symbol_stream_index: 65535,
         dll_version: 0,
-        sym_record_stream_index: StreamIndex(
-            65535,
-        ),
+        sym_record_stream_index: 65535,
         rbld: 0,
         modi_stream_size: 0,
         sec_contr_stream_size: 0,
@@ -62,49 +56,22 @@ DbiStream {
     file_names: [],
     type_server_stream: [],
     ec_stream: Strings {
-        signature: StringsSignature,
         hash_version: V1,
-        bytes: [
-            0,
+        strings: [
+            "",
         ],
-        ids: [
-            0,
-        ],
-        name_count: 0,
     },
     dbg_streams: [
-        StreamIndex(
-            65535,
-        ),
-        StreamIndex(
-            65535,
-        ),
-        StreamIndex(
-            65535,
-        ),
-        StreamIndex(
-            65535,
-        ),
-        StreamIndex(
-            65535,
-        ),
-        StreamIndex(
-            65535,
-        ),
-        StreamIndex(
-            65535,
-        ),
-        StreamIndex(
-            65535,
-        ),
-        StreamIndex(
-            65535,
-        ),
-        StreamIndex(
-            65535,
-        ),
-        StreamIndex(
-            65535,
-        ),
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
+        65535,
     ],
 }
