@@ -48,10 +48,13 @@ where
     pub fn open(mut reader: R) -> Result<Self> {
         let super_block = SuperBlock::decode((), &mut reader)?;
         let dir_layout = Self::get_dir_layout(&mut reader, &super_block)?;
-        let mut dir_reader = MsfStream::<&mut R>::new(&mut reader, &dir_layout, super_block.block_size);
+        let mut dir_reader =
+            MsfStream::<&mut R>::new(&mut reader, &dir_layout, super_block.block_size);
         let num_streams = u32::decode(constants::ENDIANESS, &mut dir_reader)?;
-        let stream_sizes: Vec<u32> =
-            Decode::decode((Len(num_streams as usize), constants::ENDIANESS), &mut dir_reader)?;
+        let stream_sizes: Vec<u32> = Decode::decode(
+            (Len(num_streams as usize), constants::ENDIANESS),
+            &mut dir_reader,
+        )?;
         let mut layouts = Vec::with_capacity(stream_sizes.len());
         for byte_size in stream_sizes {
             if byte_size == u32::MAX {

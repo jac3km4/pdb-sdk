@@ -4,9 +4,11 @@ use std::path::PathBuf;
 use anyhow::{bail, Context as _, Result};
 use object::{LittleEndian as LE, Object, ObjectSection};
 use pdb_sdk::builders::{ModuleBuilder, PdbBuilder};
-use pdb_sdk::codeview::symbols::{Procedure, ProcedureProperties, Public, PublicProperties, SymbolRecord};
+use pdb_sdk::codeview::symbols::{
+    Procedure, ProcedureProperties, Public, PublicProperties, SymbolRecord,
+};
 use pdb_sdk::codeview::types::{
-    CallingConvention, FunctionProperties, ModifierProperties, PointerProperties, TypeRecord
+    CallingConvention, FunctionProperties, ModifierProperties, PointerProperties, TypeRecord,
 };
 use pdb_sdk::codeview::DataRegionOffset;
 use pdb_sdk::dbi::{SectionContrib, SectionHeader};
@@ -14,7 +16,11 @@ use pdb_sdk::utils::StrBuf;
 use pdb_sdk::Guid;
 
 fn main() -> Result<()> {
-    let exe_path = PathBuf::from(std::env::args().nth(1).context("usage: fake_pdb [exe_path]")?);
+    let exe_path = PathBuf::from(
+        std::env::args()
+            .nth(1)
+            .context("usage: fake_pdb [exe_path]")?,
+    );
     let exe_data = fs::read(&exe_path)?;
     let obj = object::File::parse(&*exe_data)?;
 
@@ -74,29 +80,41 @@ fn main() -> Result<()> {
         //          return type = 0x0074 (int), # args = 1, param list = 0x15E2
         //          calling conv = cdecl, options = None
 
-        let referent = tpi.add("idk", TypeRecord::Modifier {
-            modified_type: 0x71.try_into().unwrap(), // wchar_t
-            properties: ModifierProperties::new().with_is_const(true),
-        });
+        let referent = tpi.add(
+            "idk",
+            TypeRecord::Modifier {
+                modified_type: 0x71.try_into().unwrap(), // wchar_t
+                properties: ModifierProperties::new().with_is_const(true),
+            },
+        );
 
-        let arg = tpi.add("idk2", TypeRecord::Pointer {
-            referent,
-            properties: PointerProperties::new(),
-            containing_class: None,
-        });
+        let arg = tpi.add(
+            "idk2",
+            TypeRecord::Pointer {
+                referent,
+                properties: PointerProperties::new(),
+                containing_class: None,
+            },
+        );
 
-        let arg_list = tpi.add("idk3", TypeRecord::ArgList {
-            count: 1,
-            arg_list: vec![arg.into()],
-        });
+        let arg_list = tpi.add(
+            "idk3",
+            TypeRecord::ArgList {
+                count: 1,
+                arg_list: vec![arg.into()],
+            },
+        );
 
-        tpi.add("func", TypeRecord::Procedure {
-            return_type: Some(0x74.try_into().unwrap()), // int
-            calling_conv: CallingConvention::NearC,
-            properties: FunctionProperties::new(),
-            arg_count: 1,
-            arg_list,
-        })
+        tpi.add(
+            "func",
+            TypeRecord::Procedure {
+                return_type: Some(0x74.try_into().unwrap()), // int
+                calling_conv: CallingConvention::NearC,
+                properties: FunctionProperties::new(),
+                arg_count: 1,
+                arg_list,
+            },
+        )
     };
 
     let mut sym_builder = builder.dbi().symbols();

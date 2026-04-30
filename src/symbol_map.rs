@@ -93,7 +93,10 @@ impl SymbolMap {
         let hash_records = Decode::decode(Len(num_records as usize), &mut input)?;
         let bitmap: Bitmap = Decode::decode(constants::ENDIANESS, &mut input)?;
         let bucket_count: u32 = bitmap.iter().map(|b| b.count_ones()).sum();
-        let buckets = Decode::decode((Len(bucket_count as usize), constants::ENDIANESS), &mut input)?;
+        let buckets = Decode::decode(
+            (Len(bucket_count as usize), constants::ENDIANESS),
+            &mut input,
+        )?;
 
         Ok(Self {
             hash_records,
@@ -152,7 +155,10 @@ struct IndexRecord {
 
 impl IndexRecord {
     pub(crate) fn new(offset: SymbolOffset) -> Self {
-        Self { offset, ref_count: 1 }
+        Self {
+            offset,
+            ref_count: 1,
+        }
     }
 
     pub fn offset(&self) -> SymbolOffset {

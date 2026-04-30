@@ -143,7 +143,8 @@ macro_rules! impl_bitfield_specifier_codecs {
                 R: ::std::io::Read,
             {
                 let val = ::declio::Decode::decode($crate::constants::ENDIANESS, reader)?;
-                <$ty as ::modular_bitfield::Specifier>::from_bytes(val).map_err(::declio::Error::new)
+                <$ty as ::modular_bitfield::Specifier>::from_bytes(val)
+                    .map_err(::declio::Error::new)
             }
         }
 

@@ -7,7 +7,8 @@ use modular_bitfield::prelude::*;
 
 use crate::utils::StrBuf;
 use crate::{
-    codecs, constants, impl_bitfield_codecs, impl_bitfield_specifier_codecs, Guid, Integer, TypeIndex
+    codecs, constants, impl_bitfield_codecs, impl_bitfield_specifier_codecs, Guid, Integer,
+    TypeIndex,
 };
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
@@ -786,7 +787,10 @@ pub enum MethodKind {
 
 impl MethodKind {
     pub fn is_introducing(self) -> bool {
-        matches!(self, Self::IntroducingVirtual | Self::PureIntroducingVirtual)
+        matches!(
+            self,
+            Self::IntroducingVirtual | Self::PureIntroducingVirtual
+        )
     }
 }
 
