@@ -96,24 +96,43 @@ impl DbiStream {
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct DbiHeader {
+    /// Version signature, always -1.
     pub signature: DbiSignature,
+    /// The version of the DBI stream.
     pub version: DbiVersion,
+    /// The number of times the PDB has been written.
     pub age: u32,
+    /// The index of the Global Symbol Stream.
     pub global_symbol_stream_index: StreamIndex,
+    /// A bitfield containing the major and minor version number of the toolchain.
     pub build_number: BuildNumber,
+    /// The index of the Public Symbol Stream.
     pub public_symbol_stream_index: StreamIndex,
+    /// The version number of mspdbXXXX.dll used to produce this PDB.
     pub dll_version: u16,
+    /// The stream containing all CodeView symbol records used by the program.
     pub sym_record_stream_index: StreamIndex,
+    /// Unknown rebuild data.
     pub rbld: u16,
+    /// The length of the Module Info Substream.
     pub modi_stream_size: u32,
+    /// The length of the Section Contribution Substream.
     pub sec_contr_stream_size: u32,
+    /// The length of the Section Map Substream.
     pub section_map_size: u32,
+    /// The length of the File Info Substream.
     pub file_info_size: u32,
+    /// The length of the Type Server Map Substream.
     pub type_server_size: u32,
+    /// The index of the MFC type server in the Type Server Map Substream.
     pub mfc_type_server_index: u32,
+    /// The length of the Optional Debug Header Stream.
     pub optional_db_header_size: u32,
+    /// The length of the EC Substream.
     pub ec_stream_size: u32,
+    /// Various information about how the program was built.
     pub flags: DbiFlags,
+    /// The target CPU type.
     pub machine_type: MachineType,
     #[declio(with = "codecs::byte_array")]
     pub reserved: [u8; 4],
@@ -123,10 +142,15 @@ pub struct DbiHeader {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum DbiVersion {
+    /// Version VC41.
     Vc41 = 930_803,
+    /// Version V50.
     V50 = 19_960_307,
+    /// Version V60.
     V60 = 19_970_606,
+    /// Version V70.
     V70 = 19_990_903,
+    /// Version V110.
     V110 = 20_091_201,
 }
 
@@ -137,7 +161,9 @@ impl_bitfield_specifier_codecs!(DbiVersion);
 #[bits = 32]
 #[repr(u32)]
 pub enum SectionContribVersion {
+    /// Version 60.
     Ver60 = 0xeffe_0000 + 19_970_605,
+    /// Version V2.
     V2 = 0xeffe_0000 + 20_140_516,
 }
 
@@ -171,8 +197,11 @@ impl_bitfield_codecs!(DbiFlags);
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct DbiModule {
+    /// Header of the DBI Module.
     pub header: ModuleInfoHeader,
+    /// Name of the module.
     pub module_name: StrBuf,
+    /// Object file name.
     pub obj_file_name: StrBuf,
 }
 
@@ -180,16 +209,26 @@ pub struct DbiModule {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct ModuleInfoHeader {
+    /// Unknown. Typically 0.
     pub module: u32,
+    /// Describes the properties of the section in the final binary which contain the code and data from this module.
     pub section_contrib: SectionContrib,
+    /// Module info flags.
     pub flags: ModuleInfoFlags,
+    /// Type Server Index for this module.
     pub type_server_index: u8,
+    /// The index of the stream that contains symbol information for this module.
     pub debug_info_stream: StreamIndex,
+    /// Sizes of the symbol and line info streams.
     pub layout: ModuleLayout,
+    /// The number of source files that contributed to this module during compilation.
     pub num_files: u16,
     pub pad1: [u8; 2],
+    /// Unknown offset.
     pub file_names_offs: u32,
+    /// The offset in the names buffer of the primary translation unit used to build this module.
     pub src_file_name_ni: u32,
+    /// The offset in the names buffer of the PDB file containing this module's symbol information.
     pub pdb_file_path_ni: u32,
 }
 
@@ -209,14 +248,21 @@ impl_bitfield_codecs!(ModuleInfoFlags);
 #[derive(Debug, Clone, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SectionContrib {
+    /// The index of the section.
     pub i_sect: u16,
     pub pad1: [u8; 2],
+    /// The offset within the section.
     pub offset: i32,
+    /// The size of the contribution.
     pub size: u32,
+    /// Corresponds to the Characteristics field of the IMAGE_SECTION_HEADER structure.
     pub characteristics: u32,
+    /// The index of the module.
     pub i_mod: u16,
     pub pad2: [u8; 2],
+    /// CRC of the data.
     pub data_crc: u32,
+    /// CRC of relocations.
     pub reloc_crc: u32,
 }
 
@@ -224,8 +270,11 @@ pub struct SectionContrib {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SectionMap {
+    /// Number of segment descriptors.
     pub sec_count: u16,
+    /// Number of logical segment descriptors.
     pub sec_count_log: u16,
+    /// Array of segment descriptors.
     #[declio(ctx = "Len(*sec_count as usize)")]
     pub entries: Vec<SectionMapEntry>,
 }
@@ -234,13 +283,21 @@ pub struct SectionMap {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SectionMapEntry {
+    /// Descriptor flags.
     pub flags: DescriptorFlags,
+    /// Logical overlay number.
     pub logical_overlay: u16,
+    /// Group index into descriptor array.
     pub group: u16,
+    /// Frame representation (e.g. selector or absolute address).
     pub frame: u16,
+    /// Byte index of segment / group name in string table, or 0xFFFF.
     pub sec_name: u16,
+    /// Byte index of class in string table, or 0xFFFF.
     pub class_name: u16,
+    /// Byte offset of the logical segment within physical segment.
     pub offset: u32,
+    /// Byte count of the segment or group.
     pub sec_byte_length: u32,
 }
 
@@ -248,12 +305,17 @@ pub struct SectionMapEntry {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FileInfo {
+    /// The number of modules for which source file information is contained.
     pub num_modules: u16,
+    /// The number of source files, capped at 64K.
     pub num_source_files: u16,
+    /// Array of module indices.
     #[declio(ctx = "(Len(*num_modules as usize), constants::ENDIANESS)")]
     pub module_indicies: Vec<u16>,
+    /// Array of integers, containing the number of source files contributing to each module.
     #[declio(ctx = "(Len(*num_modules as usize), constants::ENDIANESS)")]
     pub module_file_counts: Vec<u16>,
+    /// Offsets into the string table pointing to null terminated strings.
     #[declio(ctx = "(Len(*num_source_files as usize), constants::ENDIANESS)")]
     pub file_name_offsets: Vec<u32>,
 }
@@ -281,16 +343,26 @@ impl_bitfield_codecs!(DescriptorFlags);
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SectionHeader {
+    /// Name of the section.
     #[declio(with = "codecs::byte_array")]
     pub name: [u8; 8],
+    /// Virtual size.
     pub virtual_size: u32,
+    /// Virtual address.
     pub virtual_address: u32,
+    /// Size of raw data.
     pub size_of_raw_data: u32,
+    /// Pointer to raw data.
     pub pointer_to_raw_data: u32,
+    /// Pointer to relocations.
     pub pointer_to_relocations: u32,
+    /// Pointer to line numbers.
     pub pointer_to_line_numbers: u32,
+    /// Number of relocations.
     pub number_of_relocations: u16,
+    /// Number of line numbers.
     pub number_of_line_numbers: u16,
+    /// Section characteristics.
     pub characteristics: u32,
 }
 
@@ -315,10 +387,15 @@ impl SectionHeaderStream {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FpoData {
+    /// Offset of the function.
     pub offset: u32,
+    /// Size of the function.
     pub size: u32,
+    /// Number of locals.
     pub num_locals: u32,
+    /// Number of parameters.
     pub num_params: u16,
+    /// Attributes of the function.
     pub attributes: u16,
 }
 
@@ -343,14 +420,23 @@ impl FpoStream {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FrameData {
+    /// Start relative virtual address.
     pub rva_start: u32,
+    /// Code size.
     pub code_size: u32,
+    /// Local variables size.
     pub local_size: u32,
+    /// Parameters size.
     pub params_size: u32,
+    /// Max stack size.
     pub max_stack_size: u32,
+    /// Frame function string.
     pub frame_func: u32,
+    /// Prolog size.
     pub prolog_size: u16,
+    /// Saved registers size.
     pub saved_regs_size: u16,
+    /// Frame data flags.
     pub flags: u32,
 }
 
@@ -379,28 +465,51 @@ impl FrameDataStream {
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 16]
 pub enum MachineType {
+    /// Invalid machine type.
     Invalid = 0xffff,
+    /// Unknown machine type.
     Unknown = 0x0,
+    /// Am33 machine type.
     Am33 = 0x13,
+    /// Amd64 machine type.
     Amd64 = 0x8664,
+    /// Arm machine type.
     Arm = 0x1C0,
+    /// Arm64 machine type.
     Arm64 = 0xaa64,
+    /// ArmNT machine type.
     ArmNT = 0x1C4,
+    /// Ebc machine type.
     Ebc = 0xEBC,
+    /// X86 machine type.
     X86 = 0x14C,
+    /// Ia64 machine type.
     Ia64 = 0x200,
+    /// M32R machine type.
     M32R = 0x9041,
+    /// Mips16 machine type.
     Mips16 = 0x266,
+    /// MipsFpu machine type.
     MipsFpu = 0x366,
+    /// MipsFpu16 machine type.
     MipsFpu16 = 0x466,
+    /// PowerPC machine type.
     PowerPC = 0x1F0,
+    /// PowerPCFP machine type.
     PowerPCFP = 0x1F1,
+    /// R4000 machine type.
     R4000 = 0x166,
+    /// Sh3 machine type.
     Sh3 = 0x1A2,
+    /// Sh3Dsp machine type.
     Sh3Dsp = 0x1A3,
+    /// Sh4 machine type.
     Sh4 = 0x1A6,
+    /// Sh5 machine type.
     Sh5 = 0x1A8,
+    /// Thumb machine type.
     Thumb = 0x1C2,
+    /// WceMipsV2 machine type.
     WceMipsV2 = 0x169,
 }
 

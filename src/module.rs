@@ -100,8 +100,11 @@ impl Module {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct ModuleLayout {
+    /// Size of symbols.
     sym_bytes: u32,
+    /// Size of C11 line info.
     c11_bytes: u32,
+    /// Size of C13 line info.
     c13_bytes: u32,
 }
 
@@ -109,6 +112,7 @@ pub struct ModuleLayout {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct DebugSubsectionEntry {
+    /// Type of the debug subsection.
     pub record_type: DebugSubsectionRecordType,
     #[declio(via = "Bytes<'_, u32>")]
     pub data: Vec<u8>,
@@ -126,18 +130,31 @@ impl DebugSubsectionEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum DebugSubsectionRecordType {
+    /// CodeView Symbol Records.
     Symbols = 0xf1,
+    /// CodeView Line Information.
     Lines = 0xf2,
+    /// String Table.
     StringTable = 0xf3,
+    /// File Checksums.
     FileChecksums = 0xf4,
+    /// Frame Data.
     FrameData = 0xf5,
+    /// Inlinee Lines.
     InlineeLines = 0xf6,
+    /// Cross Scope Imports.
     CrossScopeImports = 0xf7,
+    /// Cross Scope Exports.
     CrossScopeExports = 0xf8,
+    /// IL Lines.
     ILLines = 0xf9,
+    /// Func MD Token Map.
     FuncMDTokenMap = 0xfa,
+    /// Type MD Token Map.
     TypeMDTokenMap = 0xfb,
+    /// Merged Assembly Input.
     MergedAssemblyInput = 0xfc,
+    /// Coff Symbol RVA.
     CoffSymbolRVA = 0xfd,
 }
 
@@ -167,8 +184,11 @@ pub enum DebugSubsectionRecord {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct LineFragmentHeader {
+    /// Relocation offset for the code segment.
     pub reloc: DataRegionOffset,
+    /// Flags indicating presence of columns.
     pub flags: LineFlags,
+    /// Size of the code.
     pub code_size: u32,
 }
 
@@ -176,11 +196,16 @@ pub struct LineFragmentHeader {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx = "flags: LineFlags, endian: Endian")]
 pub struct LineColumnEntry {
+    /// Index of the source file name in the string table.
     pub name_index: u32,
+    /// Number of line entries.
     pub num_lines: u32,
+    /// Size of the code segment.
     pub code_size: u32,
+    /// Array of line number entries.
     #[declio(ctx = "Len(*num_lines as usize)")]
     pub line_numbers: Vec<LineNumberEntry>,
+    /// Array of column number entries (if flags specify columns are present).
     #[declio(ctx = "Len(*num_lines as usize)", skip_if = "!flags.has_columns()")]
     pub columns: Vec<ColumnNumberEntry>,
 }
@@ -200,7 +225,9 @@ impl_bitfield_codecs!(LineFlags);
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct LineNumberEntry {
+    /// Offset of the instruction.
     pub offset: u32,
+    /// Line number and statement flags.
     pub flags: u32,
 }
 
@@ -208,7 +235,9 @@ pub struct LineNumberEntry {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct ColumnNumberEntry {
+    /// Starting column number.
     pub start_col: u16,
+    /// Ending column number.
     pub end_col: u16,
 }
 
@@ -216,8 +245,11 @@ pub struct ColumnNumberEntry {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FileChecksumEntry {
+    /// Offset of the file name in the string table.
     pub file_name_offset: u32,
+    /// Size of the checksum.
     pub checksum_size: u8,
+    /// The hashing algorithm used for the checksum.
     pub checksum_type: ChecksumType,
     #[declio(ctx = "Len(usize::from(*checksum_size))", via = "Bytes<'_>")]
     pub bytes: Vec<u8>,
@@ -227,9 +259,13 @@ pub struct FileChecksumEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 8]
 pub enum ChecksumType {
+    /// No checksum.
     None,
+    /// MD5 hash.
     Md5,
+    /// SHA-1 hash.
     Sha1,
+    /// SHA-256 hash.
     Sha256,
 }
 
