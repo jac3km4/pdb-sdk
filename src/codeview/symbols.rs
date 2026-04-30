@@ -284,38 +284,39 @@ pub enum SymbolRecord {
 impl SymbolRecord {
     pub fn name(&self) -> Option<&str> {
         match self {
-            SymbolRecord::Thunk32 { name, .. } => Some(name.as_ref()),
-            SymbolRecord::Section { name, .. } => Some(name.as_ref()),
-            SymbolRecord::CoffGroup { name, .. } => Some(name.as_ref()),
-            SymbolRecord::Export { name, .. } => Some(name.as_ref()),
-            SymbolRecord::Proc(proc) => Some(proc.name.as_ref()),
-            SymbolRecord::GlobalProc(proc) => Some(proc.name.as_ref()),
-            SymbolRecord::ProcId(proc) => Some(proc.name.as_ref()),
-            SymbolRecord::GlobalProcId(proc) => Some(proc.name.as_ref()),
-            SymbolRecord::DPCProc(proc) => Some(proc.name.as_ref()),
-            SymbolRecord::DPCProcId(proc) => Some(proc.name.as_ref()),
-            SymbolRecord::Register { name, .. } => Some(name.as_ref()),
+            SymbolRecord::Thunk32 { name, .. }
+            | SymbolRecord::Section { name, .. }
+            | SymbolRecord::CoffGroup { name, .. }
+            | SymbolRecord::Export { name, .. }
+            | SymbolRecord::Register { name, .. }
+            | SymbolRecord::Local { name, .. }
+            | SymbolRecord::Block { name, .. }
+            | SymbolRecord::Label { name, .. }
+            | SymbolRecord::ObjectName { name, .. }
+            | SymbolRecord::FileStatic { name, .. }
+            | SymbolRecord::BasePointerRelative { name, .. }
+            | SymbolRecord::RegisterRelative { name, .. }
+            | SymbolRecord::UsingNamespace { name } => Some(name.as_ref()),
+            SymbolRecord::Proc(proc)
+            | SymbolRecord::GlobalProc(proc)
+            | SymbolRecord::ProcId(proc)
+            | SymbolRecord::GlobalProcId(proc)
+            | SymbolRecord::DPCProc(proc)
+            | SymbolRecord::DPCProcId(proc) => Some(proc.name.as_ref()),
             SymbolRecord::Public32(public) => Some(public.name.as_ref()),
-            SymbolRecord::ProcedureRef(proc) => Some(proc.name.as_ref()),
-            SymbolRecord::LocalProcedureRef(proc) => Some(proc.name.as_ref()),
-            SymbolRecord::Local { name, .. } => Some(name.as_ref()),
-            SymbolRecord::Block { name, .. } => Some(name.as_ref()),
-            SymbolRecord::Label { name, .. } => Some(name.as_ref()),
-            SymbolRecord::ObjectName { name, .. } => Some(name.as_ref()),
-            SymbolRecord::FileStatic { name, .. } => Some(name.as_ref()),
-            SymbolRecord::Udt(udt) => Some(udt.name.as_ref()),
-            SymbolRecord::CobolUdt(udt) => Some(udt.name.as_ref()),
-            SymbolRecord::BasePointerRelative { name, .. } => Some(name.as_ref()),
-            SymbolRecord::RegisterRelative { name, .. } => Some(name.as_ref()),
-            SymbolRecord::Constant(constant) => Some(constant.name.as_ref()),
-            SymbolRecord::ManagedConstant(constant) => Some(constant.name.as_ref()),
-            SymbolRecord::Data(data) => Some(data.name.as_ref()),
-            SymbolRecord::GlobalData(data) => Some(data.name.as_ref()),
-            SymbolRecord::ManagedLocalData(data) => Some(data.name.as_ref()),
-            SymbolRecord::ManagedGlobalData(data) => Some(data.name.as_ref()),
-            SymbolRecord::ThreadLocalStorage(tls) => Some(tls.name.as_ref()),
-            SymbolRecord::GlobalThreadLocalStorage(tls) => Some(tls.name.as_ref()),
-            SymbolRecord::UsingNamespace { name } => Some(name.as_ref()),
+            SymbolRecord::ProcedureRef(proc) | SymbolRecord::LocalProcedureRef(proc) => {
+                Some(proc.name.as_ref())
+            }
+            SymbolRecord::Udt(udt) | SymbolRecord::CobolUdt(udt) => Some(udt.name.as_ref()),
+            SymbolRecord::Constant(constant) | SymbolRecord::ManagedConstant(constant) => {
+                Some(constant.name.as_ref())
+            }
+            SymbolRecord::Data(data)
+            | SymbolRecord::GlobalData(data)
+            | SymbolRecord::ManagedLocalData(data)
+            | SymbolRecord::ManagedGlobalData(data) => Some(data.name.as_ref()),
+            SymbolRecord::ThreadLocalStorage(tls)
+            | SymbolRecord::GlobalThreadLocalStorage(tls) => Some(tls.name.as_ref()),
             _ => None,
         }
     }

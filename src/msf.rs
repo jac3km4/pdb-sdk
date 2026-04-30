@@ -242,7 +242,7 @@ impl FreeBlockMap {
     }
 
     #[allow(unused)]
-    pub fn read<R>(mut inner: BufMsfStream<R>) -> Result<FreeBlockMap>
+    pub fn read<R>(mut inner: BufMsfStream<'_, R>) -> Result<FreeBlockMap>
     where
         R: io::Read + io::Seek,
     {

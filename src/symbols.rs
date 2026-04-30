@@ -13,7 +13,7 @@ pub struct Symbols {
 }
 
 impl Symbols {
-    pub(crate) fn read<R: io::Read + io::Seek>(mut input: BufMsfStream<R>) -> Result<Self> {
+    pub(crate) fn read<R: io::Read + io::Seek>(mut input: BufMsfStream<'_, R>) -> Result<Self> {
         let mut records: Vec<SymbolRecord> = vec![];
         let len = input.get_ref().length();
         let mut sym_stream = input.by_ref().take(len.into());
