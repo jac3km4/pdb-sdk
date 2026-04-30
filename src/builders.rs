@@ -282,8 +282,8 @@ impl Default for InfoBuilder {
         Self {
             signature: 0,
             age: 1,
-            guid: Default::default(),
-            named_streams: Default::default(),
+            guid: Guid::default(),
+            named_streams: Vec::default(),
         }
     }
 }

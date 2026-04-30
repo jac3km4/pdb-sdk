@@ -50,7 +50,7 @@ impl Module {
             symbols.push(PrefixedRecord::decode(&mut sym_stream)?.into_inner());
         }
 
-        let c11_bytes = <Bytes>::decode(Len(layout.c11_bytes as usize), &mut source)?.into_vec();
+        let c11_bytes = <Bytes<'_>>::decode(Len(layout.c11_bytes as usize), &mut source)?.into_vec();
 
         let mut c13_records = vec![];
         let mut c13_stream = source.by_ref().take(layout.c13_bytes.into());
@@ -58,7 +58,7 @@ impl Module {
             c13_records.push(DebugSubsectionEntry::decode((), &mut c13_stream)?);
         }
 
-        let global_ref_bytes = <Bytes<u32>>::decode(constants::ENDIANESS, &mut source)?.into_vec();
+        let global_ref_bytes = <Bytes<'_, u32>>::decode(constants::ENDIANESS, &mut source)?.into_vec();
 
         let res = Self {
             symbols,
@@ -69,7 +69,7 @@ impl Module {
         Ok(res)
     }
 
-    pub(crate) fn write<S, const N: u32>(self, sink: &mut MsfStreamWriter<S, N>) -> Result<ModuleLayout>
+    pub(crate) fn write<S, const N: u32>(self, sink: &mut MsfStreamWriter<'_, S, N>) -> Result<ModuleLayout>
     where
         S: io::Write + io::Seek,
     {
@@ -110,7 +110,7 @@ pub struct ModuleLayout {
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct DebugSubsectionEntry {
     pub record_type: DebugSubsectionRecordType,
-    #[declio(via = "Bytes<u32>")]
+    #[declio(via = "Bytes<'_, u32>")]
     pub data: Vec<u8>,
 }
 
@@ -219,7 +219,7 @@ pub struct FileChecksumEntry {
     pub file_name_offset: u32,
     pub checksum_size: u8,
     pub checksum_type: ChecksumType,
-    #[declio(ctx = "Len(usize::from(*checksum_size))", via = "Bytes")]
+    #[declio(ctx = "Len(usize::from(*checksum_size))", via = "Bytes<'_>")]
     pub bytes: Vec<u8>,
 }
 

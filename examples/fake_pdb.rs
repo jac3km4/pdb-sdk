@@ -103,7 +103,7 @@ fn main() -> Result<()> {
 
     sym_builder.add(Public {
         properties: PublicProperties::new().with_is_function(true),
-        offset: DataRegionOffset::new(0x3e78800, 1),
+        offset: DataRegionOffset::new(0x03e7_8800, 1),
         name: StrBuf::new("My_Function"),
     });
 
@@ -126,13 +126,13 @@ fn main() -> Result<()> {
         _ => unreachable!(),
     }
 
-    let text_base: u64 = 0x140001000;
+    let text_base: u64 = 0x0001_4000_1000;
 
     let sec_contrib = SectionContrib {
         i_sect: 1,
         pad1: [0, 0],
         offset: 0,
-        size: 0x0624fcec,
+        size: 0x0624_fcec,
         characteristics: 0,
         i_mod: 0,
         pad2: [0, 0],
@@ -191,11 +191,11 @@ fn main() -> Result<()> {
 
     // add_func(0x0000000141aea826, 0x10, "some_fake");
 
-    add_func(0x0000000141aea826, 0x10, "Some");
-    add_func(0x0000000141aecae6, 0x10, "Obviously");
-    add_func(0x0000000141aaa0fd, 0x10, "Fake");
-    add_func(0x000000014315f0bf, 0x10, "Function");
-    add_func(0x0000000143154b1d, 0x10, "Names");
+    add_func(0x0000_0001_41ae_a826, 0x10, "Some");
+    add_func(0x0000_0001_41ae_cae6, 0x10, "Obviously");
+    add_func(0x0000_0001_41aa_a0fd, 0x10, "Fake");
+    add_func(0x0000_0001_4315_f0bf, 0x10, "Function");
+    add_func(0x0000_0001_4315_4b1d, 0x10, "Names");
 
     builder.dbi().add_module(module);
 

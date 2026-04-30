@@ -119,7 +119,7 @@ pub(crate) fn hash_v1(bytes: &[u8]) -> u32 {
         hash ^= u32::from(*b);
     }
 
-    hash |= 0x20202020;
+    hash |= 0x2020_2020;
     hash ^= hash >> 11;
     hash ^ (hash >> 16)
 }

@@ -11,7 +11,7 @@ use crate::result::Result;
 use crate::utils::CaseInsensitiveStr;
 use crate::{constants, SymbolOffset};
 
-const HDR_VERSION: u32 = 0xeffe0000 + 19990810;
+const HDR_VERSION: u32 = 0xeffe_0000 + 19_990_810;
 const IPHR_HASH: usize = 4096;
 const BITMAP_SIZE: usize = (IPHR_HASH + 32) / 32;
 
@@ -49,7 +49,7 @@ impl SymbolMap {
         }
 
         let mut sum = 0;
-        for start in bucket_starts.iter_mut() {
+        for start in &mut bucket_starts {
             let val = *start;
             *start += sum;
             sum += val;

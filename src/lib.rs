@@ -435,12 +435,9 @@ impl<Ctx> EncodedSize<Ctx> for Integer {
     fn encoded_size(&self, _ctx: Ctx) -> usize {
         match self {
             Integer::I16(_) => 4,
-            Integer::I32(_) => 6,
-            Integer::I64(_) => 10,
-            Integer::U8(_) => 2,
-            Integer::U16(_) => 2,
-            Integer::U32(_) => 6,
-            Integer::U64(_) => 10,
+            Integer::U8(_) | Integer::U16(_) => 2,
+            Integer::I32(_) | Integer::U32(_) => 6,
+            Integer::I64(_) | Integer::U64(_) => 10,
         }
     }
 }

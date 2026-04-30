@@ -58,7 +58,7 @@ pub struct PdbInfoHeader {
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct NamedStreams {
-    #[declio(via = "Bytes<u32>")]
+    #[declio(via = "Bytes<'_, u32>")]
     name_buffer: Vec<u8>,
     offset_index_map: Table,
 }
@@ -83,16 +83,16 @@ impl NamedStreams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Specifier)]
 #[bits = 32]
 pub enum PdbVersion {
-    Vc2 = 19941610,
-    Vc4 = 19950623,
-    Vc41 = 19950814,
-    Vc50 = 19960307,
-    Vc98 = 19970604,
-    Vc70Dep = 19990604,
-    Vc70 = 20000404,
-    Vc80 = 20030901,
-    Vc110 = 20091201,
-    Vc140 = 20140508,
+    Vc2 = 19_941_610,
+    Vc4 = 19_950_623,
+    Vc41 = 19_950_814,
+    Vc50 = 19_960_307,
+    Vc98 = 19_970_604,
+    Vc70Dep = 19_990_604,
+    Vc70 = 20_000_404,
+    Vc80 = 20_030_901,
+    Vc110 = 20_091_201,
+    Vc140 = 20_140_508,
 }
 
 impl_bitfield_specifier_codecs!(PdbVersion);
@@ -102,10 +102,10 @@ impl_bitfield_specifier_codecs!(PdbVersion);
 #[bits = 32]
 pub enum PdbFeature {
     None = 0,
-    Vc110 = 20091201,
-    Vc140 = 20140508,
-    NoTypeMerge = 0x4D544F4E,
-    MinimalDebugInfo = 0x494E494D,
+    Vc110 = 20_091_201,
+    Vc140 = 20_140_508,
+    NoTypeMerge = 0x4D54_4F4E,
+    MinimalDebugInfo = 0x494E_494D,
 }
 
 impl_bitfield_specifier_codecs!(PdbFeature);

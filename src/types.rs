@@ -168,7 +168,7 @@ impl TypeHash {
 
     pub(crate) fn write<W, const N: u32>(
         &self,
-        output: &mut MsfStreamWriter<W, N>,
+        output: &mut MsfStreamWriter<'_, W, N>,
     ) -> Result<TypeHashLayout>
     where
         W: io::Write + io::Seek,
@@ -204,7 +204,7 @@ impl EmbeddedBuf {
     fn from_encoded<A, W, Ctx, const N: u32>(
         value: &A,
         ctx: Ctx,
-        out: &mut MsfStreamWriter<W, N>,
+        out: &mut MsfStreamWriter<'_, W, N>,
     ) -> Result<Self>
     where
         A: Encode<Ctx>,
@@ -221,11 +221,11 @@ impl EmbeddedBuf {
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 32]
 pub enum TypeStreamVersion {
-    V40 = 19950410,
-    V41 = 19951122,
-    V50 = 19961031,
-    V70 = 19990903,
-    V80 = 20040203,
+    V40 = 19_950_410,
+    V41 = 19_951_122,
+    V50 = 19_961_031,
+    V70 = 19_990_903,
+    V80 = 20_040_203,
 }
 
 impl_bitfield_specifier_codecs!(TypeStreamVersion);
