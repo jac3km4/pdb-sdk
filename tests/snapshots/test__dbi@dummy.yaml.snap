@@ -1,0 +1,110 @@
+---
+source: tests/test.rs
+expression: dbi
+input_file: tests/fixtures/dummy.yaml
+---
+DbiStream {
+    header: DbiHeader {
+        signature: DbiSignature,
+        version: V70,
+        age: 1,
+        global_symbol_stream_index: StreamIndex(
+            65535,
+        ),
+        build_number: BuildNumber {
+            minor: 11,
+            major: 14,
+            is_new_format: true,
+        },
+        public_symbol_stream_index: StreamIndex(
+            65535,
+        ),
+        dll_version: 0,
+        sym_record_stream_index: StreamIndex(
+            65535,
+        ),
+        rbld: 0,
+        modi_stream_size: 0,
+        sec_contr_stream_size: 0,
+        section_map_size: 0,
+        file_info_size: 4,
+        type_server_size: 0,
+        mfc_type_server_index: 0,
+        optional_db_header_size: 22,
+        ec_stream_size: 25,
+        flags: DbiFlags {
+            is_incrementally_linked: false,
+            is_stripped: false,
+            has_c_types: false,
+        },
+        machine_type: Amd64,
+        reserved: [
+            0,
+            0,
+            0,
+            0,
+        ],
+    },
+    modules: [],
+    section_contribs: [],
+    sec_map: SectionMap {
+        sec_count: 0,
+        sec_count_log: 0,
+        entries: [],
+    },
+    file_info: FileInfo {
+        num_modules: 0,
+        num_source_files: 0,
+        module_indicies: [],
+        module_file_counts: [],
+        file_name_offsets: [],
+    },
+    file_names: [],
+    type_server_stream: [],
+    ec_stream: Strings {
+        signature: StringsSignature,
+        hash_version: V1,
+        bytes: [
+            0,
+        ],
+        ids: [
+            0,
+        ],
+        name_count: 0,
+    },
+    dbg_streams: [
+        StreamIndex(
+            65535,
+        ),
+        StreamIndex(
+            65535,
+        ),
+        StreamIndex(
+            65535,
+        ),
+        StreamIndex(
+            65535,
+        ),
+        StreamIndex(
+            65535,
+        ),
+        StreamIndex(
+            65535,
+        ),
+        StreamIndex(
+            65535,
+        ),
+        StreamIndex(
+            65535,
+        ),
+        StreamIndex(
+            65535,
+        ),
+        StreamIndex(
+            65535,
+        ),
+        StreamIndex(
+            65535,
+        ),
+    ],
+}

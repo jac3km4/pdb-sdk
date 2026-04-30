@@ -109,9 +109,8 @@ fn generate_and_read_pdb_from_yaml() {
 
         insta::assert_debug_snapshot!("info", pdb.get_info().unwrap());
 
-        if let Ok(dbi) = pdb.get_dbi() {
-            insta::assert_debug_snapshot!("dbi", dbi);
-        }
+        let dbi = pdb.get_dbi().unwrap();
+        insta::assert_debug_snapshot!("dbi", dbi);
 
         let tpi = pdb.get_tpi().unwrap();
         insta::assert_debug_snapshot!("tpi", tpi.records());
