@@ -1,7 +1,7 @@
-use std::fs::File;
-use std::io;
+use std::fs::{self, File};
 use std::path::Path;
 use std::process::Command;
+use std::{env, io};
 
 use anyhow::{bail, Context, Result};
 use assert_matches::assert_matches;
@@ -93,7 +93,7 @@ fn generate_and_read_pdb_from_yaml() {
     };
 
     insta::glob!("fixtures/*.yaml", |path| {
-        let temp_pdb = std::env::temp_dir().join("temp_generated.pdb");
+        let temp_pdb = env::temp_dir().join("temp_generated.pdb");
         yaml2pdb(&pdbutil, path, &temp_pdb).expect("failed to convert yaml to pdb");
 
         let mut pdb =
@@ -111,7 +111,7 @@ fn generate_and_read_pdb_from_yaml() {
         let ipi = pdb.get_ipi().unwrap();
         insta::assert_debug_snapshot!("ipi", ipi.records());
 
-        std::fs::remove_file(&temp_pdb).ok();
+        fs::remove_file(&temp_pdb).ok();
     });
 }
 
@@ -119,7 +119,7 @@ fn find_pdbutil() -> Option<String> {
     ["llvm-pdbutil-18", "llvm-pdbutil", "yaml2pdb"]
         .into_iter()
         .find(|&cmd| Command::new(cmd).arg("--version").output().is_ok())
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
 }
 
 fn yaml2pdb(pdbutil: &str, yaml_path: &Path, pdb_path: &Path) -> Result<()> {

@@ -1,3 +1,5 @@
+use std::fmt;
+
 use declio::ctx::Len;
 use declio::{Decode, Encode};
 
@@ -32,8 +34,8 @@ impl Table {
     }
 }
 
-impl std::fmt::Debug for Table {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Table {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_map()
             .entries(self.entries.iter().map(|kv| (kv.key, kv.val)))
             .finish()

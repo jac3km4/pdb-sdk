@@ -1,5 +1,5 @@
-use std::io;
-use std::{cmp::Ordering, fmt};
+use std::cmp::Ordering;
+use std::{fmt, io};
 
 use declio::{Decode, Encode, EncodedSize};
 

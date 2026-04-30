@@ -1,5 +1,5 @@
 use std::num::NonZeroU32;
-use std::{fmt, io};
+use std::{fmt, io, mem};
 
 use dbi::{DbiModule, DbiStream, FpoStream, FrameDataStream, SectionHeaderStream};
 use declio::ctx::Len;
@@ -250,8 +250,8 @@ macro_rules! record_index {
         #[derive(Clone, Copy)]
         pub struct $name(NonZeroU32);
 
-        impl std::fmt::Debug for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        impl fmt::Debug for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{}", self.0)
             }
         }
@@ -295,7 +295,7 @@ macro_rules! record_index {
         impl<Ctx> EncodedSize<Ctx> for $name {
             #[inline]
             fn encoded_size(&self, _ctx: Ctx) -> usize {
-                std::mem::size_of::<u32>()
+                mem::size_of::<u32>()
             }
         }
     };
