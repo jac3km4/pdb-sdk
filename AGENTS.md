@@ -1,40 +1,44 @@
----
-name: pdb_sdk_agent
-description: Expert Rust software engineer specializing in LLVM PDB files and declarative binary encoding.
----
+# AGENTS.md
 
-You are an expert Rust software engineer for this project.
+## Commands
+```bash
+# Run full test suite (skips yaml2pdb if LLVM is missing)
+cargo test
 
-## Persona
-- You specialize in Rust, particularly reading and writing Microsoft PDB (Program Database) files.
-- You deeply understand binary encoding, decoding, and bit-level struct manipulations as modeled in this repo.
-- Your output consists of clean, performant Rust code, accurate structural parses, and comprehensive integration tests.
+# Update snapshot tests
+INSTA_UPDATE=always cargo test
+# or
+cargo insta review
 
-## Project knowledge
-- **Tech Stack:** Rust 2021 edition.
-- **Libraries/Patterns:**
-  - Heavily relies on `declio` (using `Encode`, `Decode`, `EncodedSize` macros, `#[declio(id = "...")]`) and `modular-bitfield` for declarative binary encoding/decoding.
-  - Core structures like `SymbolRecord` and `TypeRecord` map specific constants (e.g. `S_PUB32`) to enum variants.
-  - Code uses `insta` for structural snapshot testing when writing parsers.
-- **File Structure:**
-  - `src/lib.rs` – Exposes core stream types: `PdbFile`, `MsfStream`, `DbiStream`, `TpiStream`/`IpiStream`, `PdbInfo`, `Symbols`.
-  - `src/codeview/` - Definitions for PDB CodeView symbols (`symbols.rs`) and types (`types.rs`).
-  - `tests/` – Integration testing (`roundtrip` and MSF generation). Many tests rely on external LLVM tools.
+# Setup environment (to run all tests including yaml2pdb)
+sudo apt-get update && sudo apt-get install -y llvm
+```
 
-## Tools you can use
-- **Build:** `cargo build`
-- **Test:** `cargo test` (Executes standard test suite. Skips `yaml2pdb` integration tests if LLVM is missing on the host.)
-- **Update Snapshots:** `INSTA_UPDATE=always cargo test` or `cargo insta review`
-- **Setup Environment:** `sudo apt-get update && sudo apt-get install -y llvm` (Installs LLVM for `yaml2pdb` to get full test coverage).
+## Boundaries
 
-## Standards
-Follow these rules for all code you write:
-- **Encoding/Decoding:** Use declarative approaches where possible (leveraging `declio` attributes) over manual `io::Read`/`io::Write` bit-shifting.
-- **Naming conventions:** Standard Rust conventions (e.g. PascalCase for structs/enums, snake_case for methods/modules). Avoid manual implementations when `modular-bitfield` can achieve the same.
+### Always do
+- Use `insta` for structural snapshot testing when writing parsers.
+- Use declarative encoding/decoding (`declio` and `modular-bitfield`) when possible.
 
-**Code style example:**
+### Ask first
+- Before significantly changing the public MSF/PDB stream reading API in `src/lib.rs`.
+- Before adding or removing core dependencies (currently lightweight: `declio`, `modular-bitfield`, `insta`).
+
+### Never do
+- Never attempt to fix warnings related to deprecated hidden lifetime parameters (e.g., elided lifetimes in paths); ignore them.
+- Never force tests to fail if external CLI tools like `yaml2pdb` are missing; they must gracefully skip to avoid breaking CI environments without LLVM.
+
+## Project Structure
+```
+src/             # Core library code. Exposes core stream types: PdbFile, MsfStream, DbiStream, TpiStream/IpiStream, PdbInfo, Symbols.
+src/codeview/    # Definitions for PDB CodeView symbols (symbols.rs) and types (types.rs). Pure data structures.
+tests/           # Integration tests using YAML fixtures (`test.rs`). Relies on LLVM tools for full coverage.
+examples/        # Examples for reading and writing PDBs.
+```
+
+## Code Style
 ```rust
-// ✅ Good - declarative encoding using declio and custom codecs
+// Preferred: declarative encoding using declio
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS", id_type = "LittleEndian<u16>")]
 pub enum SymbolRecord {
@@ -50,7 +54,11 @@ pub enum SymbolRecord {
 }
 ```
 
-## Boundaries
-- ✅ **Always:** Use `insta` for structural snapshot testing when implementing new parsing features. Run `cargo test` before submitting.
-- ⚠️ **Ask first:** Before significantly changing the MSF/PDB stream reading API or removing core dependencies.
-- 🚫 **Never:** Attempt to fix warnings related to deprecated hidden lifetime parameters (e.g., elided lifetimes in paths); ignore them. Do not force tests to fail if external CLI tools like `yaml2pdb` are missing; they must gracefully skip to avoid breaking CI environments without LLVM.
+## Testing
+Framework: Cargo test and `insta`
+Snapshot Strategy: Use `insta` macro snapshots for parsed structures.
+Fixtures: Test suite dynamically generates PDB files from YAML fixtures using `llvm-pdbutil` (`yaml2pdb`).
+
+## Git Workflow
+Branch naming: Descriptive and short.
+Commit format: Short subject line (50 chars max), a blank line, and a more detailed body if necessary.
