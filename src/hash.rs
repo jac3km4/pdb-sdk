@@ -48,9 +48,7 @@ impl Default for Table {
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct KeyVal {
-    /// The key.
     pub key: u32,
-    /// The value.
     pub val: u32,
 }
 
