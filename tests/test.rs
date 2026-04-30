@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::io;
+use std::process::Command;
 
 use assert_matches::assert_matches;
 use pdb_sdk::builders::PdbBuilder;
@@ -81,20 +82,71 @@ fn read_llvm_pdb() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn generate_and_read_pdb_from_yaml() -> Result<()> {
+    let tool = ["llvm-pdbutil-18", "llvm-pdbutil", "yaml2pdb"]
+        .iter()
+        .find(|&&cmd| Command::new(cmd).arg("--version").output().is_ok());
+
+    let Some(&pdbutil) = tool else {
+        println!("Skipping yaml2pdb test because no suitable LLVM tool was found.");
+        return Ok(());
+    };
+
+    let temp_pdb = std::env::temp_dir().join("temp_generated.pdb");
+
+    let mut cmd = Command::new(pdbutil);
+    if pdbutil != "yaml2pdb" {
+        cmd.arg("yaml2pdb");
+    }
+
+    let status = cmd
+        .arg("tests/fixtures/dummy.yaml")
+        .arg(&format!("--pdb={}", temp_pdb.display()))
+        .status()
+        .expect("Failed to execute tool");
+
+    if !status.success() {
+        panic!("Tool failed to generate pdb");
+    }
+
+    let _pdb = match PdbFile::open(File::open(&temp_pdb)?) {
+        Ok(p) => p,
+        Err(e) => {
+            std::fs::remove_file(&temp_pdb).ok();
+            return Err(e);
+        }
+    };
+
+    // Simply check that the tool successfully generated a file we can open.
+    // The specifics of streams might differ between llvm-pdbutil versions
+    // so we don't assert deeply on them right now unless we have stable structures.
+
+    std::fs::remove_file(&temp_pdb).ok();
+
+    Ok(())
+}
+
 fn write_dummy() -> Result<io::Cursor<Vec<u8>>> {
     let mut builder = PdbBuilder::default();
-    builder.tpi().add("pointer_type", TypeRecord::Pointer {
-        referent: BuiltinType::I64.into(),
-        properties: PointerProperties::new()
-            .with_is_const(true)
-            .with_is_volatile(true)
-            .with_kind(PointerKind::Near64),
-        containing_class: None,
-    });
-    builder.ipi().add("string_id", IdRecord::StringId {
-        id: None,
-        string: StrBuf::new("test"),
-    });
+    builder.tpi().add(
+        "pointer_type",
+        TypeRecord::Pointer {
+            referent: BuiltinType::I64.into(),
+            properties: PointerProperties::new()
+                .with_is_const(true)
+                .with_is_volatile(true)
+                .with_kind(PointerKind::Near64),
+            containing_class: None,
+        },
+    );
+    builder.ipi().add(
+        "string_id",
+        IdRecord::StringId {
+            id: None,
+            string: StrBuf::new("test"),
+        },
+    );
 
     let mut sym_builder = builder.dbi().symbols();
     sym_builder.add(Public {
