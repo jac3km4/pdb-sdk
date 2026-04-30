@@ -1,0 +1,15 @@
+---
+source: tests/test.rs
+expression: ipi.records()
+---
+[
+    FuncId {
+        parent_scope: None,
+        function_type: TypeIndex(
+            4096,
+        ),
+        name: StrBuf(
+            "main",
+        ),
+    },
+]

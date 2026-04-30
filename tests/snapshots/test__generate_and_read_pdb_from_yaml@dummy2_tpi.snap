@@ -1,0 +1,10 @@
+---
+source: tests/test.rs
+expression: tpi.records()
+---
+[
+    ArgList {
+        count: 0,
+        arg_list: [],
+    },
+]

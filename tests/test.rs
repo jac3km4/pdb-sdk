@@ -95,34 +95,69 @@ fn generate_and_read_pdb_from_yaml() -> Result<()> {
 
     let temp_pdb = std::env::temp_dir().join("temp_generated.pdb");
 
-    let mut cmd = Command::new(pdbutil);
-    if pdbutil != "yaml2pdb" {
-        cmd.arg("yaml2pdb");
-    }
+    for entry in std::fs::read_dir("tests/fixtures").unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
 
-    let status = cmd
-        .arg("tests/fixtures/dummy.yaml")
-        .arg(&format!("--pdb={}", temp_pdb.display()))
-        .status()
-        .expect("Failed to execute tool");
-
-    if !status.success() {
-        panic!("Tool failed to generate pdb");
-    }
-
-    let _pdb = match PdbFile::open(File::open(&temp_pdb)?) {
-        Ok(p) => p,
-        Err(e) => {
-            std::fs::remove_file(&temp_pdb).ok();
-            return Err(e);
+        if path.extension().and_then(|s| s.to_str()) != Some("yaml") {
+            continue;
         }
-    };
 
-    // Simply check that the tool successfully generated a file we can open.
-    // The specifics of streams might differ between llvm-pdbutil versions
-    // so we don't assert deeply on them right now unless we have stable structures.
+        let mut cmd = Command::new(pdbutil);
+        if pdbutil != "yaml2pdb" {
+            cmd.arg("yaml2pdb");
+        }
 
-    std::fs::remove_file(&temp_pdb).ok();
+        let status = cmd
+            .arg(&path)
+            .arg(format!("--pdb={}", temp_pdb.display()))
+            .status()
+            .expect("Failed to execute tool");
+
+        if !status.success() {
+            panic!("Tool failed to generate pdb for {:?}", path);
+        }
+
+        let mut pdb = match PdbFile::open(File::open(&temp_pdb)?) {
+            Ok(p) => p,
+            Err(e) => {
+                std::fs::remove_file(&temp_pdb).ok();
+                return Err(e);
+            }
+        };
+
+        let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
+
+        let mut settings = insta::Settings::clone_current();
+        settings.set_snapshot_suffix(format!("{}_info", file_stem));
+        settings.bind(|| {
+            let info = pdb.get_info().unwrap();
+            insta::assert_debug_snapshot!(info);
+        });
+
+        settings.set_snapshot_suffix(format!("{}_dbi", file_stem));
+        settings.bind(|| {
+            if let Ok(dbi) = pdb.get_dbi() {
+                insta::assert_debug_snapshot!(dbi);
+            }
+        });
+
+        settings.set_snapshot_suffix(format!("{}_tpi", file_stem));
+        settings.bind(|| {
+            if let Ok(tpi) = pdb.get_tpi() {
+                insta::assert_debug_snapshot!(tpi.records());
+            }
+        });
+
+        settings.set_snapshot_suffix(format!("{}_ipi", file_stem));
+        settings.bind(|| {
+            if let Ok(ipi) = pdb.get_ipi() {
+                insta::assert_debug_snapshot!(ipi.records());
+            }
+        });
+
+        std::fs::remove_file(&temp_pdb).ok();
+    }
 
     Ok(())
 }

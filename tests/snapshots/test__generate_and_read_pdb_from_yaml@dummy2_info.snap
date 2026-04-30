@@ -1,0 +1,84 @@
+---
+source: tests/test.rs
+expression: info
+---
+PdbInfo {
+    header: PdbInfoHeader {
+        version: Vc70,
+        signature: 4077785295,
+        age: 1,
+        guid: Guid(
+            [
+                207,
+                16,
+                14,
+                243,
+                26,
+                198,
+                139,
+                226,
+                76,
+                76,
+                68,
+                32,
+                80,
+                68,
+                66,
+                46,
+            ],
+        ),
+    },
+    named_streams: NamedStreams {
+        name_buffer: [
+            47,
+            76,
+            105,
+            110,
+            107,
+            73,
+            110,
+            102,
+            111,
+            0,
+            47,
+            110,
+            97,
+            109,
+            101,
+            115,
+            0,
+        ],
+        offset_index_map: Table {
+            size: 2,
+            cap: 4,
+            present: BitVector {
+                words: 1,
+                buf: [
+                    6,
+                    0,
+                    0,
+                    0,
+                ],
+            },
+            deleted: BitVector {
+                words: 0,
+                buf: [],
+            },
+            entries: [
+                KeyVal {
+                    key: 10,
+                    val: 7,
+                },
+                KeyVal {
+                    key: 0,
+                    val: 5,
+                },
+            ],
+        },
+    },
+    features: [
+        None,
+        Vc140,
+        Vc140,
+    ],
+}
