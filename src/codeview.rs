@@ -16,12 +16,14 @@ pub(crate) const RECORD_ALIGNMENT: usize = 4;
 pub(crate) struct PrefixedRecord<A>(pub A);
 
 impl<A> PrefixedRecord<A> {
+    /// Unwraps the prefixed record, returning the inner value.
     pub fn into_inner(self) -> A {
         self.0
     }
 }
 
 impl<A> PrefixedRecord<A> {
+    /// Decodes a prefixed record from a reader.
     pub fn decode<R>(reader: &mut R) -> Result<Self, declio::Error>
     where
         A: Decode,
@@ -73,12 +75,14 @@ where
 
 #[derive(Debug, PartialEq, Eq, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
+/// Represents an offset into a data region, accompanied by its segment index.
 pub struct DataRegionOffset {
     pub offset: u32,
     pub segment: u16,
 }
 
 impl DataRegionOffset {
+    /// Creates a new data region offset.
     pub fn new(offset: u32, segment: u16) -> Self {
         Self { offset, segment }
     }
@@ -101,6 +105,7 @@ impl Ord for DataRegionOffset {
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
+/// Represents a hardware register index.
 pub struct Register(pub u16);
 
 pub(crate) trait NamedSymbol {

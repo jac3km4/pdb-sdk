@@ -466,6 +466,7 @@ pub enum SymbolRecord {
 }
 
 impl SymbolRecord {
+    /// Gets the name of the symbol if it has one.
     pub fn name(&self) -> Option<&str> {
         match self {
             SymbolRecord::Thunk32 { name, .. }

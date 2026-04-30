@@ -10,6 +10,8 @@ use crate::result::Result;
 use crate::symbol_map::SymbolMap;
 use crate::{SymbolOffset, constants};
 
+/// Represents the Publics Stream.
+/// This stream exposes a hash map of public symbols (via `SymbolMap`), an address map, and a thunk map.
 #[derive(Debug, Getters)]
 pub struct Publics {
     map: SymbolMap,
