@@ -428,7 +428,10 @@ impl<Ctx: Copy> Decode<Ctx> for Integer {
             constants::LF_ULONG => Ok(Integer::U32(u32::decode(constants::ENDIANESS, reader)?)),
             constants::LF_QUADWORD => Ok(Integer::I64(i64::decode(constants::ENDIANESS, reader)?)),
             constants::LF_UQUADWORD => Ok(Integer::U64(u64::decode(constants::ENDIANESS, reader)?)),
-            val => Err(declio::Error::new(format!("unsupported numeric leaf type 0x{:04x}", val))),
+            val => Err(declio::Error::new(format!(
+                "unsupported numeric leaf type 0x{:04x}",
+                val
+            ))),
         }
     }
 }
