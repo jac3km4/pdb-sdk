@@ -121,12 +121,14 @@ where
                 self.position = (self.position as i64 + offset) as u32;
             }
         }
-        let cur = self.position / self.block_size;
-        let file_pos = self.layout.blocks[cur as usize];
-        let offset: u64 = (self.position % self.block_size).into();
-        self.inner.seek(io::SeekFrom::Start(
-            file_pos.to_file_pos(self.block_size) + offset,
-        ))?;
+        // Skip the inner seek when there's no backing block at the target
+        let cur = (self.position / self.block_size) as usize;
+        if let Some(file_pos) = self.layout.blocks.get(cur) {
+            let offset: u64 = (self.position % self.block_size).into();
+            self.inner.seek(io::SeekFrom::Start(
+                file_pos.to_file_pos(self.block_size) + offset,
+            ))?;
+        }
         Ok(self.position.into())
     }
 }
@@ -290,5 +292,23 @@ impl fmt::Debug for StreamIndex {
 impl From<StreamIndex> for u16 {
     fn from(idx: StreamIndex) -> Self {
         idx.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Cursor, Read, Seek, SeekFrom};
+
+    use super::{MsfStream, MsfStreamLayout};
+
+    #[test]
+    fn seek_on_empty_stream_does_not_panic() {
+        let layout = MsfStreamLayout::new(Vec::new(), 0);
+        let mut inner = Cursor::new(Vec::<u8>::new());
+        let mut stream = MsfStream::new(&mut inner, &layout, 512);
+
+        assert_eq!(stream.seek(SeekFrom::Start(0)).unwrap(), 0);
+        let mut buf = [0u8; 4];
+        assert_eq!(stream.read(&mut buf).unwrap(), 0);
     }
 }

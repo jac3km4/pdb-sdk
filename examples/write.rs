@@ -18,7 +18,7 @@ fn main() -> Result<()> {
     builder.tpi().add(
         "pointer_type",
         TypeRecord::Pointer {
-            referent: BuiltinType::I64.into(),
+            referent: Some(BuiltinType::I64.into()),
             properties: PointerProperties::new()
                 .with_is_const(true)
                 .with_is_volatile(true)

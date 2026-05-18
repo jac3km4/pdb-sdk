@@ -93,7 +93,13 @@ impl DbiStream {
         let type_server_stream: Bytes<'_> =
             Decode::decode(Len(header.type_server_size as usize), &mut reader)?;
 
-        let ec_stream: Strings = Strings::decode((), &mut reader)?;
+        let mut ec_bytes = vec![0u8; header.ec_stream_size as usize];
+        reader.read_exact(&mut ec_bytes)?;
+        let ec_stream = if ec_bytes.len() >= 4 && ec_bytes[0..4] == 0xEFFE_EFFE_u32.to_le_bytes() {
+            Strings::decode((), &mut ec_bytes.as_slice())?
+        } else {
+            Strings::empty()
+        };
 
         let dbg_stream_count = header.optional_db_header_size as usize / 2;
         let dbg_streams: Vec<StreamIndex> = Decode::decode(Len(dbg_stream_count), &mut reader)?;

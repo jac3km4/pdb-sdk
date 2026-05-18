@@ -83,7 +83,7 @@ fn main() -> Result<()> {
         let referent = tpi.add(
             "idk",
             TypeRecord::Modifier {
-                modified_type: 0x71.try_into().unwrap(), // wchar_t
+                modified_type: Some(0x71_u32.try_into().unwrap()), // wchar_t
                 properties: ModifierProperties::new().with_is_const(true),
             },
         );
@@ -91,7 +91,7 @@ fn main() -> Result<()> {
         let arg = tpi.add(
             "idk2",
             TypeRecord::Pointer {
-                referent,
+                referent: Some(referent),
                 properties: PointerProperties::new(),
                 containing_class: None,
             },
@@ -133,7 +133,7 @@ fn main() -> Result<()> {
         code_size: 0xc,
         dbg_start_offset: 0,
         dbg_end_offset: 0xc,
-        function_type: fn_type,
+        function_type: Some(fn_type),
         code_offset: DataRegionOffset::new(0x20, 1),
         properties: ProcedureProperties::new(),
         name: StrBuf::new("My_Function2"),
@@ -189,7 +189,7 @@ fn main() -> Result<()> {
             code_size: len,
             dbg_start_offset: 0,
             dbg_end_offset: 0,
-            function_type: fn_type,
+            function_type: Some(fn_type),
             code_offset: DataRegionOffset::new((addr - text_base) as u32, 1),
             properties: ProcedureProperties::new(),
             name: StrBuf::new(name),

@@ -5,7 +5,9 @@ input_file: tests/fixtures/dummy2.yaml
 ---
 [
     Pointer {
-        referent: 4096,
+        referent: Some(
+            4096,
+        ),
         properties: PointerProperties {
             kind: Near64,
             mode: Vanilla,

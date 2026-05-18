@@ -19,7 +19,8 @@ pub enum TypeRecord {
     /// Describes a pointer to another type.
     Pointer {
         /// The type being pointed to.
-        referent: TypeIndex,
+        #[declio(with = "codecs::optional_index")]
+        referent: Option<TypeIndex>,
         /// Pointer attributes.
         properties: PointerProperties,
         /// The class containing the member pointer.
@@ -30,7 +31,8 @@ pub enum TypeRecord {
     /// Describes a modified type (e.g., const, volatile).
     Modifier {
         /// The type being modified.
-        modified_type: TypeIndex,
+        #[declio(with = "codecs::optional_index")]
+        modified_type: Option<TypeIndex>,
         /// Modifier attributes.
         properties: ModifierProperties,
     },
@@ -98,9 +100,10 @@ pub enum TypeRecord {
         element_type: TypeIndex,
         /// Type of the array index.
         index_type: TypeIndex,
-        /// Dimensions of the array.
-        #[declio(with = "codecs::padded_rem_list")]
-        dimensions: Vec<Integer>,
+        /// Total size of the array in bytes (encoded as a numeric leaf).
+        size: Integer,
+        /// Optional name.
+        name: StrBuf,
     },
     #[declio(id = "constants::LF_CLASS.into()")]
     /// Describes a class.
@@ -111,6 +114,15 @@ pub enum TypeRecord {
     #[declio(id = "constants::LF_INTERFACE.into()")]
     /// Describes an interface.
     Interface(StructRecord),
+    /// v2 class record.
+    #[declio(id = "constants::LF_CLASS2.into()")]
+    Class2(StructRecord2),
+    /// v2 structure record.
+    #[declio(id = "constants::LF_STRUCTURE2.into()")]
+    Struct2(StructRecord2),
+    /// v2 interface record.
+    #[declio(id = "constants::LF_INTERFACE2.into()")]
+    Interface2(StructRecord2),
     #[declio(id = "constants::LF_UNION.into()")]
     /// Describes a union.
     Union(UnionRecord),
@@ -133,7 +145,8 @@ pub enum TypeRecord {
         /// Complete class type.
         complete_class: TypeIndex,
         /// Overridden virtual function table.
-        overriden_vftable: TypeIndex,
+        #[declio(with = "codecs::optional_index")]
+        overriden_vftable: Option<TypeIndex>,
         /// Offset of the virtual function pointer.
         vfptr_offset: u32,
         /// Number of names.
@@ -222,7 +235,8 @@ pub enum TypeRecord {
         /// Member attributes.
         properties: MemberProperties,
         /// Type of the method.
-        method_type: TypeIndex,
+        #[declio(with = "codecs::optional_index")]
+        method_type: Option<TypeIndex>,
         /// Offset in the vtable.
         #[declio(skip_if = "!properties.method_kind().is_introducing()")]
         vtable_offset: Option<u32>,
@@ -355,6 +369,32 @@ pub struct StructRecord {
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
+/// V2 struct/class/interface record.
+pub struct StructRecord2 {
+    /// Class properties (v2).
+    pub properties: ClassPropertiesV2,
+    /// Field list type index.
+    #[declio(with = "codecs::optional_index")]
+    pub field_list: Option<TypeIndex>,
+    /// Derivation list type index.
+    #[declio(with = "codecs::optional_index")]
+    pub derivation_list: Option<TypeIndex>,
+    /// VTable shape type index.
+    #[declio(with = "codecs::optional_index")]
+    pub vtable_shape: Option<TypeIndex>,
+    /// Number of members.
+    pub member_count: u16,
+    /// Size in bytes.
+    pub size: Integer,
+    /// Name of the struct.
+    pub name: StrBuf,
+    /// Unique name of the struct.
+    #[declio(skip_if = "!properties.has_unique_name()")]
+    pub unique_name: StrBuf,
+}
+
+#[derive(Debug, Encode, Decode, EncodedSize)]
+#[declio(ctx_is = "constants::ENDIANESS")]
 /// Record describing a union.
 pub struct UnionRecord {
     /// Number of members.
@@ -382,9 +422,11 @@ pub struct EnumRecord {
     /// Class properties.
     pub properties: ClassProperties,
     /// Underlying integer type.
-    pub underlying_type: TypeIndex,
+    #[declio(with = "codecs::optional_index")]
+    pub underlying_type: Option<TypeIndex>,
     /// Field list type index.
-    pub field_list: TypeIndex,
+    #[declio(with = "codecs::optional_index")]
+    pub field_list: Option<TypeIndex>,
     /// Name of the enum.
     pub name: StrBuf,
     /// Unique name of the enum.
@@ -429,7 +471,8 @@ pub struct MethodListEntry {
     /// Reserved padding.
     pub reserved: [u8; 2],
     /// Type index of the method.
-    pub method_type: TypeIndex,
+    #[declio(with = "codecs::optional_index")]
+    pub method_type: Option<TypeIndex>,
     /// Optional offset in the vtable.
     #[declio(skip_if = "!properties.method_kind().is_introducing()")]
     pub vtable_offset: Option<u32>,
@@ -635,6 +678,47 @@ pub struct ClassProperties {
 }
 
 impl_bitfield_codecs!(ClassProperties);
+
+#[bitfield(bits = 32)]
+#[derive(Debug, Clone, Copy)]
+/// V2 layout of class/struct properties.
+pub struct ClassPropertiesV2 {
+    /// Is packed.
+    pub is_packed: bool,
+    /// Has constructor or destructor.
+    pub has_constructor_or_deconstructor: bool,
+    /// Has overloaded operator.
+    pub has_overloaded_operator: bool,
+    /// Is nested.
+    pub is_nested: bool,
+    /// Contains nested class.
+    pub contains_nested: bool,
+    /// Has overloaded assignment operator.
+    pub has_overloaded_assignment: bool,
+    /// Has conversion operator.
+    pub has_conversion: bool,
+    /// Is a forward reference.
+    pub is_forward_ref: bool,
+    /// Is scoped.
+    pub is_scoped: bool,
+    /// Has a unique name.
+    pub has_unique_name: bool,
+    /// Is sealed.
+    pub is_sealed: bool,
+    /// HFA kind (2 bits in cvinfo).
+    #[skip]
+    hfa: B2,
+    /// Is intrinsic.
+    pub is_intrinsic: bool,
+    /// MoCom UDT kind (2 bits in cvinfo).
+    #[skip]
+    mocom: B2,
+    /// Reserved upper bits.
+    #[skip]
+    reserved: B16,
+}
+
+impl_bitfield_codecs!(ClassPropertiesV2);
 
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]

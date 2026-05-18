@@ -55,13 +55,15 @@ where
             (Len(num_streams as usize), constants::ENDIANESS),
             &mut dir_reader,
         )?;
+
         let mut layouts = Vec::with_capacity(stream_sizes.len());
         for byte_size in stream_sizes {
             if byte_size == u32::MAX {
+                layouts.push(MsfStreamLayout::new(Vec::new(), 0));
                 continue;
             }
             let block_count = byte_size.div_ceil(super_block.block_size);
-            let blocks = Decode::decode(Len(block_count as usize), &mut reader)?;
+            let blocks = Decode::decode(Len(block_count as usize), &mut dir_reader)?;
             layouts.push(MsfStreamLayout::new(blocks, byte_size));
         }
 
@@ -130,7 +132,11 @@ where
         let hash_stream = self
             .get_indexed_stream(tpi.header().hash_stream_index)
             .ok_or(Error::StreamNotFound("TPI hash stream"))?;
-        TypeHash::read(hash_stream, &tpi.header().hash_layout)
+        TypeHash::read(
+            hash_stream,
+            &tpi.header().hash_layout,
+            tpi.header().num_hash_buckets,
+        )
     }
 
     /// Reads the ID Info (IPI) Stream, containing CodeView ID records.

@@ -382,6 +382,7 @@ where
             hash_values: self.hashes,
             index_offsets: vec![],
             hash_adjusters: Table::default(),
+            bucket_count: HASH_BUCKET_NUMBER,
         };
 
         let last_index =

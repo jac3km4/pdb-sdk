@@ -21,6 +21,9 @@ pub enum SymbolRecord {
     /// End of a scope (e.g., procedure, block).
     #[declio(id = "constants::S_END.into()")]
     ScopeEnd,
+    /// Legacy `S_SKIP` placeholder.
+    #[declio(id = "constants::S_SKIP.into()")]
+    Skip,
     /// End of an inline site.
     #[declio(id = "constants::S_INLINESITE_END.into()")]
     InlineSiteEnd,
@@ -70,6 +73,8 @@ pub enum SymbolRecord {
         section_number: u16,
         /// Alignment requirement.
         alignment: u8,
+        /// Reserved padding byte.
+        reserved: u8,
         /// Relative virtual address.
         rva: u32,
         /// Size in bytes.
@@ -144,7 +149,7 @@ pub enum SymbolRecord {
         /// Reserved byte.
         reserved: u8,
         /// List of fields.
-        #[declio(with = "codecs::padded_rem_list")]
+        #[declio(with = "codecs::rem_list")]
         fields: Vec<StrBuf>,
     },
     /// An inline site.
@@ -159,11 +164,59 @@ pub enum SymbolRecord {
         inlinee: IdIndex,
         annotations: (), // TODO
     },
+    /// V2 inline-site record.
+    #[declio(id = "constants::S_INLINESITE2.into()")]
+    InlineSite2 {
+        /// Offset of the parent symbol.
+        #[declio(with = "codecs::optional_index")]
+        parent: Option<SymbolOffset>,
+        /// Offset of the end of the scope.
+        end: SymbolOffset,
+        /// ID index of the inlinee function.
+        inlinee: IdIndex,
+        /// Number of times the inlinee was called.
+        invocation_count: u32,
+        annotations: (), // TODO: decode BinaryAnnotation stream
+    },
+    /// Profile-guided optimization stats.
+    #[declio(id = "constants::S_POGODATA.into()")]
+    PogoData {
+        /// Number of times the function ran during profiling.
+        invocation_count: u32,
+        /// Dynamic instruction count (sum across all invocations).
+        dynamic_instruction_count: i64,
+        /// Number of static instructions in the function.
+        static_instruction_count: u32,
+        /// Number of instructions actually executed.
+        live_instruction_count: u32,
+    },
+    /// Separated-code block.
+    #[declio(id = "constants::S_SEPCODE.into()")]
+    SepCode {
+        /// Offset of the parent procedure's symbol.
+        #[declio(with = "codecs::optional_index")]
+        parent: Option<SymbolOffset>,
+        /// Offset of the block-end sentinel.
+        end: SymbolOffset,
+        /// Length in bytes of the separated code.
+        length: u32,
+        /// Flags (`CV_SEPCODEFLAGS`).
+        flags: u32,
+        /// Section-relative offset of this block.
+        offset: u32,
+        /// Section-relative offset of the enclosing scope.
+        parent_offset: u32,
+        /// Section index of this block.
+        section: u16,
+        /// Section index of the enclosing scope.
+        parent_section: u16,
+    },
     /// A local variable or parameter.
     #[declio(id = "constants::S_LOCAL.into()")]
     Local {
         /// Type of the local variable.
-        local_type: TypeIndex,
+        #[declio(with = "codecs::optional_index")]
+        local_type: Option<TypeIndex>,
         /// Properties of the local variable.
         properties: LocalProperties,
         /// Name of the symbol.
@@ -253,6 +306,21 @@ pub enum SymbolRecord {
         #[declio(with = "codecs::padded_rem_list")]
         gaps: Vec<LocalVariableGap>,
     },
+    /// Indirected register-relative definition range.
+    #[declio(id = "constants::S_DEFRANGE_REGISTER_REL_INDIR.into()")]
+    DefRangeRegisterRelIndirect {
+        /// The register containing the indirect pointer.
+        register: Register,
+        /// Properties of the definition range.
+        properties: DefRangeRegisterRelProperties,
+        /// Base pointer offset.
+        base_pointer_offset: i32,
+        /// Range where the variable is valid.
+        range: LocalVariableRange,
+        /// Gaps in the variable's validity.
+        #[declio(with = "codecs::padded_rem_list")]
+        gaps: Vec<LocalVariableGap>,
+    },
     /// A block scope.
     #[declio(id = "constants::S_BLOCK32.into()")]
     Block {
@@ -299,7 +367,7 @@ pub enum SymbolRecord {
         /// Version string.
         version: StrBuf,
         /// Extra compiler settings.
-        #[declio(with = "codecs::padded_rem_list")]
+        #[declio(with = "codecs::rem_list")]
         extra_settings: Vec<StrBuf>,
     },
     /// Compiler version information (newer format).
@@ -343,8 +411,11 @@ pub enum SymbolRecord {
     CallSiteInfo {
         /// Offset of the code region.
         code_offset: DataRegionOffset,
+        /// Reserved padding word.
+        reserved: u16,
         /// Type of the call.
-        call_type: TypeIndex,
+        #[declio(with = "codecs::optional_index")]
+        call_type: Option<TypeIndex>,
     },
     /// A file-static variable.
     #[declio(id = "constants::S_FILESTATIC.into()")]
@@ -418,7 +489,8 @@ pub enum SymbolRecord {
         /// Offset relative to the register.
         offset: u32,
         /// Type of the value.
-        value_type: TypeIndex,
+        #[declio(with = "codecs::optional_index")]
+        value_type: Option<TypeIndex>,
         /// The register containing the value.
         register: Register,
         /// Name of the symbol.
@@ -460,8 +532,61 @@ pub enum SymbolRecord {
         /// Offset of the code region.
         code_offset: DataRegionOffset,
         /// List of strings.
-        #[declio(with = "codecs::padded_rem_list")]
+        #[declio(with = "codecs::rem_list")]
         strings: Vec<StrBuf>,
+    },
+    /// Reference to an `S_ANNOTATION` symbol.
+    #[declio(id = "constants::S_ANNOTATIONREF.into()")]
+    AnnotationRef(ProcedureRef),
+    /// v2 mini-PDB reference.
+    #[declio(id = "constants::S_REF_MINIPDB2.into()")]
+    RefMiniPdb2 {
+        /// Section index or type
+        index_or_isect: u32,
+        /// 1-based index into the module list.
+        imod: u16,
+        /// Packed flag bits.
+        flags: u16,
+    },
+    /// `S_REGREL32_INDIR`: indirected variant of `S_REGREL32`.
+    #[declio(id = "constants::S_REGREL32_INDIR.into()")]
+    RegisterRelativeIndirect {
+        /// Offset relative to the register.
+        offset: u32,
+        /// Type of the value.
+        #[declio(with = "codecs::optional_index")]
+        value_type: Option<TypeIndex>,
+        /// Indirection flags.
+        flags: u32,
+        /// The register containing the indirect pointer.
+        register: Register,
+        /// Name of the symbol.
+        name: StrBuf,
+    },
+    /// ARM jump-table descriptor.
+    #[declio(id = "constants::S_ARMSWITCHTABLE.into()")]
+    ArmSwitchTable(ArmSwitchTable),
+    /// Association between a local and another value.
+    #[declio(id = "constants::S_ASSOCIATION.into()")]
+    Association {
+        /// Association flags.
+        flags: u16,
+        /// Associated data (interpretation is producer-specific).
+        data: u32,
+    },
+    /// Constant value live at function entry.
+    #[declio(id = "constants::S_DEFRANGE_CONSTVAL_ON_ENTRY.into()")]
+    DefRangeConstValOnEntry {
+        /// The constant value.
+        value: u32,
+    },
+    /// Global symbol live at function entry.
+    #[declio(id = "constants::S_DEFRANGE_GLOBALSYM_ON_ENTRY.into()")]
+    DefRangeGlobalSymOnEntry {
+        /// Type index of the global.
+        type_index: u32,
+        /// Local properties / flags.
+        flags: u16,
     },
 }
 
@@ -489,9 +614,9 @@ impl SymbolRecord {
             | SymbolRecord::DPCProc(proc)
             | SymbolRecord::DPCProcId(proc) => Some(proc.name.as_ref()),
             SymbolRecord::Public32(public) => Some(public.name.as_ref()),
-            SymbolRecord::ProcedureRef(proc) | SymbolRecord::LocalProcedureRef(proc) => {
-                Some(proc.name.as_ref())
-            }
+            SymbolRecord::ProcedureRef(proc)
+            | SymbolRecord::LocalProcedureRef(proc)
+            | SymbolRecord::AnnotationRef(proc) => Some(proc.name.as_ref()),
             SymbolRecord::Udt(udt) | SymbolRecord::CobolUdt(udt) => Some(udt.name.as_ref()),
             SymbolRecord::Constant(constant) | SymbolRecord::ManagedConstant(constant) => {
                 Some(constant.name.as_ref())
@@ -581,7 +706,8 @@ pub struct Constant {
 /// Record describing a data symbol.
 pub struct Data {
     /// Type index of the data.
-    pub data_type: TypeIndex,
+    #[declio(with = "codecs::optional_index")]
+    pub data_type: Option<TypeIndex>,
     /// Offset in the data region.
     pub offset: DataRegionOffset,
     /// Name of the data symbol.
@@ -598,6 +724,28 @@ pub struct ThreadLocalStorage {
     pub offset: DataRegionOffset,
     /// Name of the TLS symbol.
     pub name: StrBuf,
+}
+
+#[derive(Debug, Encode, Decode, EncodedSize)]
+#[declio(ctx_is = "constants::ENDIANESS")]
+/// `S_ARMSWITCHTABLE` body.
+pub struct ArmSwitchTable {
+    /// Base offset within the section.
+    pub offset_base: u32,
+    /// Segment index for `offset_base`.
+    pub base_segment: u16,
+    /// Type discriminator for the switch table entries.
+    pub switch_type: u16,
+    /// Offset of the dispatch branch.
+    pub branch_offset: u32,
+    /// Offset of the table itself.
+    pub table_offset: u32,
+    /// Segment of the dispatch branch.
+    pub branch_segment: u16,
+    /// Segment of the table.
+    pub table_segment: u16,
+    /// Number of entries in the table.
+    pub entries_count: u32,
 }
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
@@ -633,7 +781,8 @@ pub struct Procedure {
     /// Debug end offset.
     pub dbg_end_offset: u32,
     /// Type index of the function.
-    pub function_type: TypeIndex,
+    #[declio(with = "codecs::optional_index")]
+    pub function_type: Option<TypeIndex>,
     /// Offset of the code region.
     pub code_offset: DataRegionOffset,
     /// Procedure properties.

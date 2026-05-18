@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::io::{self, Read};
+use std::io;
 
 use declio::ctx::Len;
 use declio::{Decode, Encode, EncodedSize, magic_bytes};
@@ -21,8 +21,6 @@ magic_bytes! {
     pub HeaderSize(&TypeStreamHeader::BYTE_SIZE.to_le_bytes());
     #[derive(Debug)]
     pub HashKeySize(&4u32.to_le_bytes());
-    #[derive(Debug)]
-    pub HashBucketNumber(&HASH_BUCKET_NUMBER.to_le_bytes());
 }
 
 /// The PDB TPI Stream, containing CodeView Type Records.
@@ -50,9 +48,18 @@ impl<A> TypeStream<A> {
         }
 
         let mut records: Vec<A> = vec![];
-        let mut type_record_stream = input.by_ref().take(header.type_record_bytes.into());
-        while type_record_stream.limit() > 0 {
-            let record = PrefixedRecord::decode(&mut type_record_stream)?;
+        let total = u64::from(header.type_record_bytes);
+        let first_index = u32::from(header.type_index_begin);
+        let mut consumed: u64 = 0;
+        while consumed < total {
+            let type_index = first_index + records.len() as u32;
+            let (record, size) = PrefixedRecord::<A>::decode_with_size(&mut input).map_err(|e| {
+                Error::EncodingFailed(declio::Error::new(format!(
+                    "type stream: TI=0x{type_index:x} (record #{}) at byte offset {consumed}: {e}",
+                    records.len()
+                )))
+            })?;
+            consumed += size;
             records.push(record.into_inner());
         }
 
@@ -97,8 +104,8 @@ pub struct TypeStreamHeader {
     pub hash_aux_stream_index: StreamIndex,
     /// The size of a hash value (usually 4 bytes).
     pub hash_key_size: HashKeySize,
-    /// The number of buckets used to generate the hash values in the hash streams.
-    pub num_hash_buckets: HashBucketNumber,
+    /// The number of hash buckets used to bucket type-record name hashes.
+    pub num_hash_buckets: u32,
 
     /// Offsets and lengths within the hash stream.
     pub hash_layout: TypeHashLayout,
@@ -122,7 +129,7 @@ impl TypeStreamHeader {
             hash_stream_index: hash_stream,
             hash_aux_stream_index: StreamIndex(u16::MAX),
             hash_key_size: HashKeySize,
-            num_hash_buckets: HashBucketNumber,
+            num_hash_buckets: HASH_BUCKET_NUMBER,
             hash_layout,
         }
     }
@@ -145,17 +152,18 @@ pub struct TypeHash {
     pub(crate) hash_values: Vec<u32>,
     pub(crate) index_offsets: Vec<IndexOffset>,
     pub(crate) hash_adjusters: Table,
+    pub(crate) bucket_count: u32,
 }
 
 impl TypeHash {
     /// Gets the type index for a given name using the hash stream.
     pub fn get_index(&self, name: &str) -> Option<TypeIndex> {
-        let hash = hash_v1(name.as_bytes()) % HASH_BUCKET_NUMBER;
+        let hash = hash_v1(name.as_bytes()) % self.bucket_count;
         let i = self.hash_values.iter().position(|&i| i == hash)?;
         TypeIndex::try_from(FIRST_NON_BUILTIN_TYPE + i as u32).ok()
     }
 
-    pub(crate) fn read<R>(mut input: R, layout: &TypeHashLayout) -> Result<Self>
+    pub(crate) fn read<R>(mut input: R, layout: &TypeHashLayout, bucket_count: u32) -> Result<Self>
     where
         R: io::Read + io::Seek,
     {
@@ -171,12 +179,17 @@ impl TypeHash {
             (Len(num_index_offsets as usize), constants::ENDIANESS),
             &mut input,
         )?;
-        input.seek(io::SeekFrom::Start(layout.hash_adjusters.offset.into()))?;
-        let hash_adjusters = Decode::decode((), &mut input)?;
+        let hash_adjusters = if layout.hash_adjusters.length > 0 {
+            input.seek(io::SeekFrom::Start(layout.hash_adjusters.offset.into()))?;
+            Decode::decode((), &mut input)?
+        } else {
+            Table::default()
+        };
         let this = Self {
             hash_values,
             index_offsets,
             hash_adjusters,
+            bucket_count,
         };
         Ok(this)
     }

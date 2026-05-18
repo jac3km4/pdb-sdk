@@ -42,12 +42,21 @@ impl Module {
     where
         R: io::Read,
     {
-        let mut sym_stream = source.by_ref().take(layout.sym_bytes.into());
-        DebugSectionSignature::decode((), &mut sym_stream)?;
+        DebugSectionSignature::decode((), &mut source)?;
 
         let mut symbols = vec![];
-        while sym_stream.limit() > 0 {
-            symbols.push(PrefixedRecord::decode(&mut sym_stream)?.into_inner());
+        let mut record_index = 0usize;
+        let total = u64::from(layout.sym_bytes);
+        let mut consumed: u64 = 4; // signature already consumed
+        while consumed < total {
+            let (record, size) = PrefixedRecord::decode_with_size(&mut source).map_err(|e| {
+                crate::result::Error::EncodingFailed(declio::Error::new(format!(
+                    "module symbol stream: record #{record_index} at byte offset {consumed}: {e}"
+                )))
+            })?;
+            consumed += size;
+            record_index += 1;
+            symbols.push(record.into_inner());
         }
 
         let c11_bytes =
@@ -187,6 +196,33 @@ pub enum DebugSubsectionRecord {
         #[declio(with = "codecs::padded_rem_list")]
         entries: Vec<FileChecksumEntry>,
     },
+    #[declio(id = "DebugSubsectionRecordType::InlineeLines")]
+    InlineeLines {
+        #[declio(ctx = "constants::ENDIANESS")]
+        signature: u32,
+        #[declio(with = "codecs::rem_bytes")]
+        entries: Vec<u8>,
+    },
+    #[declio(id = "DebugSubsectionRecordType::Symbols")]
+    Symbols(#[declio(with = "codecs::rem_bytes")] Vec<u8>),
+    #[declio(id = "DebugSubsectionRecordType::StringTable")]
+    StringTable(#[declio(with = "codecs::rem_bytes")] Vec<u8>),
+    #[declio(id = "DebugSubsectionRecordType::FrameData")]
+    FrameData(#[declio(with = "codecs::rem_bytes")] Vec<u8>),
+    #[declio(id = "DebugSubsectionRecordType::CrossScopeImports")]
+    CrossScopeImports(#[declio(with = "codecs::rem_bytes")] Vec<u8>),
+    #[declio(id = "DebugSubsectionRecordType::CrossScopeExports")]
+    CrossScopeExports(#[declio(with = "codecs::rem_bytes")] Vec<u8>),
+    #[declio(id = "DebugSubsectionRecordType::ILLines")]
+    ILLines(#[declio(with = "codecs::rem_bytes")] Vec<u8>),
+    #[declio(id = "DebugSubsectionRecordType::FuncMDTokenMap")]
+    FuncMDTokenMap(#[declio(with = "codecs::rem_bytes")] Vec<u8>),
+    #[declio(id = "DebugSubsectionRecordType::TypeMDTokenMap")]
+    TypeMDTokenMap(#[declio(with = "codecs::rem_bytes")] Vec<u8>),
+    #[declio(id = "DebugSubsectionRecordType::MergedAssemblyInput")]
+    MergedAssemblyInput(#[declio(with = "codecs::rem_bytes")] Vec<u8>),
+    #[declio(id = "DebugSubsectionRecordType::CoffSymbolRVA")]
+    CoffSymbolRVA(#[declio(with = "codecs::rem_bytes")] Vec<u8>),
 }
 
 /// The header for a line fragment.

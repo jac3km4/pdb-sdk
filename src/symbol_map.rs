@@ -94,12 +94,18 @@ impl SymbolMap {
         let gsi_header = GsiHashHeader::decode((), &mut input)?;
         let num_records = gsi_header.hr_size / 8;
         let hash_records = Decode::decode(Len(num_records as usize), &mut input)?;
-        let bitmap: Bitmap = Decode::decode(constants::ENDIANESS, &mut input)?;
-        let bucket_count: u32 = bitmap.iter().map(|b| b.count_ones()).sum();
-        let buckets = Decode::decode(
-            (Len(bucket_count as usize), constants::ENDIANESS),
-            &mut input,
-        )?;
+
+        let (bitmap, buckets) = if gsi_header.num_buckets == 0 {
+            ([0u32; BITMAP_SIZE], Vec::new())
+        } else {
+            let bitmap: Bitmap = Decode::decode(constants::ENDIANESS, &mut input)?;
+            let bucket_count: u32 = bitmap.iter().map(|b| b.count_ones()).sum();
+            let buckets = Decode::decode(
+                (Len(bucket_count as usize), constants::ENDIANESS),
+                &mut input,
+            )?;
+            (bitmap, buckets)
+        };
 
         Ok(Self {
             hash_records,

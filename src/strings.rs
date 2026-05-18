@@ -34,6 +34,17 @@ impl Strings {
         let str = &self.bytes[offset.0 as usize..].split(|&n| n == 0).next()?;
         str::from_utf8(str).ok()
     }
+
+    /// Builds an empty `Strings` table - used when a substream is sized 0
+    pub(crate) fn empty() -> Self {
+        Self {
+            signature: StringsSignature,
+            hash_version: HashVersion::V1,
+            bytes: vec![],
+            ids: vec![],
+            name_count: 0,
+        }
+    }
 }
 
 impl fmt::Debug for Strings {

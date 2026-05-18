@@ -33,6 +33,71 @@ pub mod optional_index {
     }
 }
 
+pub mod rem_list {
+    use declio::{Decode, Encode, EncodedSize};
+
+    pub fn decode<A, Ctx, R>(ctx: Ctx, reader: &mut R) -> Result<Vec<A>, declio::Error>
+    where
+        A: Decode<Ctx>,
+        R: std::io::Read,
+        Ctx: Copy,
+    {
+        let mut buf = vec![];
+        reader.read_to_end(&mut buf)?;
+        let mut elems = vec![];
+        let mut slice = &buf[..];
+        while !slice.is_empty() {
+            elems.push(A::decode(ctx, &mut slice)?);
+        }
+        Ok(elems)
+    }
+
+    pub fn encode<A, Ctx, W>(elems: &[A], ctx: Ctx, writer: &mut W) -> Result<(), declio::Error>
+    where
+        A: Encode<Ctx>,
+        W: std::io::Write,
+        Ctx: Copy,
+    {
+        for elem in elems {
+            elem.encode(ctx, writer)?;
+        }
+        Ok(())
+    }
+
+    #[inline]
+    pub fn encoded_size<A, Ctx>(elems: &[A], ctx: Ctx) -> usize
+    where
+        A: EncodedSize<Ctx>,
+        Ctx: Copy,
+    {
+        elems.iter().map(|el| el.encoded_size(ctx)).sum()
+    }
+}
+
+pub mod rem_bytes {
+    pub fn decode<Ctx, R>(_ctx: Ctx, reader: &mut R) -> Result<Vec<u8>, declio::Error>
+    where
+        R: std::io::Read,
+    {
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        Ok(buf)
+    }
+
+    pub fn encode<Ctx, W>(val: &[u8], _ctx: Ctx, writer: &mut W) -> Result<(), declio::Error>
+    where
+        W: std::io::Write,
+    {
+        writer.write_all(val)?;
+        Ok(())
+    }
+
+    #[inline]
+    pub fn encoded_size<Ctx>(val: &[u8], _ctx: Ctx) -> usize {
+        val.len()
+    }
+}
+
 pub mod padded_rem_list {
     use declio::{Decode, Encode, EncodedSize};
 
@@ -53,10 +118,19 @@ pub mod padded_rem_list {
         let mut rem = slice.len();
         while !slice.is_empty() {
             elems.push(A::decode(ctx, &mut slice)?);
-
             let read = rem - slice.len();
+
+            // If the inner decoder under-consumed the on-disk record, the
+            // buffer may not hold the full implied padding slot; return a
+            // structured error instead of panicking on out-of-range slicing.
             if read % RECORD_ALIGNMENT != 0 {
                 let padding = RECORD_ALIGNMENT - (read % RECORD_ALIGNMENT);
+                if slice.len() < padding {
+                    return Err(declio::Error::new(format!(
+                        "padded_rem_list: inner decoder under-consumed (read {read} bytes, needs {padding} pad bytes, only {} remain)",
+                        slice.len()
+                    )));
+                }
                 slice = &slice[padding..];
             }
             rem = slice.len();
@@ -76,7 +150,7 @@ pub mod padded_rem_list {
             let size = elem.encoded_size(ctx);
             let padding = align_to(size, RECORD_ALIGNMENT) - size;
             if padding != 0 {
-                let pad_byte = padding as u8 | 0xF0;
+                let pad_byte = padding as u8 | crate::constants::LF_PAD0;
                 let padding_bytes = [0u8; RECORD_ALIGNMENT];
                 writer.write_all(&[pad_byte])?;
                 writer.write_all(&padding_bytes[0..padding - 1])?;

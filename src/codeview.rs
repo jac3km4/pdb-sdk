@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::io::{self, Read};
+use std::io;
 
 use declio::{Decode, Encode, EncodedSize};
 use symbols::{Public, SymbolRecord};
@@ -23,27 +23,46 @@ impl<A> PrefixedRecord<A> {
 }
 
 impl<A> PrefixedRecord<A> {
-    /// Decodes a prefixed record from a reader.
-    pub fn decode<R>(reader: &mut R) -> Result<Self, declio::Error>
+    /// Decodes a length-prefixed CodeView record and returns the total number
+    /// of bytes consumed from `reader` (2-byte length prefix plus body).
+    /// Trailing bytes the inner parser leaves unconsumed are discarded.
+    pub fn decode_with_size<R>(reader: &mut R) -> Result<(Self, u64), declio::Error>
     where
         A: Decode,
         R: io::Read,
     {
-        let len = u16::decode(constants::ENDIANESS, reader)?;
-        let mut slice = reader.take(len.into());
+        let len = u16::decode(constants::ENDIANESS, reader)? as usize;
+        let mut buf = vec![0u8; len];
+        reader.read_exact(&mut buf)?;
+        let mut slice: &[u8] = &buf;
         let res = A::decode((), &mut slice)?;
+        Ok((Self(res), (len + 2) as u64))
+    }
 
-        let mut padding_buffer = [0; 16];
-        while slice.limit() != 0 {
-            let byte = u8::decode((), &mut slice)?;
-            if (constants::LF_PAD0..=constants::LF_PAD15).contains(&byte) {
-                let padding = (byte & 0x0F) - 1;
-                slice.read_exact(&mut padding_buffer[..padding as usize])?;
-            } else if byte != 0 {
-                return Err(declio::Error::new(format!("invalid pading byte {}", byte)));
-            }
+    /// Like [`Self::decode_with_size`], but returns `Ok(None)` when the next
+    /// record's length prefix is `< 2` (no room for the kind tag). Some
+    /// PDBs pad the tail of the global symbol stream with `00 00` to align
+    /// the stream byte size.
+    pub fn decode_or_terminator<R>(reader: &mut R) -> Result<Option<Self>, declio::Error>
+    where
+        A: Decode,
+        R: io::Read,
+    {
+        let mut len_buf = [0u8; 2];
+        match reader.read_exact(&mut len_buf) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
+            Err(e) => return Err(e.into()),
         }
-        Ok(Self(res))
+        let len = u16::from_le_bytes(len_buf) as usize;
+        if len < 2 {
+            return Ok(None);
+        }
+        let mut buf = vec![0u8; len];
+        reader.read_exact(&mut buf)?;
+        let mut slice: &[u8] = &buf;
+        let res = A::decode((), &mut slice)?;
+        Ok(Some(Self(res)))
     }
 }
 
@@ -65,7 +84,7 @@ where
 
         let padding = full_size - size;
         if padding != 0 {
-            let pad_byte = padding as u8 | 0xF0;
+            let pad_byte = padding as u8 | constants::LF_PAD0;
             writer.write_all(&[pad_byte])?;
             writer.write_all(&padding_bytes[0..padding - 1])?;
         }
