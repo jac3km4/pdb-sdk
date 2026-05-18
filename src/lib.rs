@@ -256,7 +256,7 @@ pub struct IndexIsZero;
 
 macro_rules! record_index {
     ($name:ident) => {
-        #[derive(Clone, Copy)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
         pub struct $name(NonZeroU32);
 
         impl fmt::Debug for $name {
