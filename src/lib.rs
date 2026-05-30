@@ -375,7 +375,7 @@ pub enum Integer {
 impl Integer {
     /// Create an Integer from an unsigned value, using smallest encoding
     pub fn from_unsigned(val: u64) -> Self {
-        if val <= u16::MAX as u64 {
+        if val < constants::LF_NUMERIC as u64 {
             Integer::U16(val as u16)
         } else if val <= u32::MAX as u64 {
             Integer::U32(val as u32)
