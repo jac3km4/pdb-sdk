@@ -349,6 +349,64 @@ impl InfoBuilder {
 pub type TpiBuilder = TypeStreamBuilder<TypeRecord>;
 pub type IpiBuilder = TypeStreamBuilder<IdRecord>;
 
+impl TpiBuilder {
+    /// Add a field list, automatically splitting into continuation chains
+    /// (via `LF_INDEX` / [`TypeRecord::ListContinuation`]) when the encoded
+    /// size would exceed the u16 length-prefix limit.
+    pub fn add_field_list(&mut self, name: &str, fields: Vec<TypeRecord>) -> TypeIndex {
+        const MAX_FIELD_LIST_PAYLOAD: usize = u16::MAX as usize - 4;
+
+        let mut chunks: Vec<Vec<TypeRecord>> = vec![];
+        let mut chunk = Vec::new();
+        // 2 bytes for the LF_FIELDLIST discriminator
+        let mut chunk_size: usize = 2;
+        // LF_INDEX continuation record: 2 (discriminator) + 4 (TypeIndex), aligned = 8
+        const CONTINUATION_SIZE: usize = 8;
+
+        for field in fields {
+            let field_size = field.encoded_size(());
+            let aligned = align_to(field_size, RECORD_ALIGNMENT);
+
+            if chunk_size + aligned + CONTINUATION_SIZE > MAX_FIELD_LIST_PAYLOAD
+                && !chunk.is_empty()
+            {
+                chunks.push(std::mem::take(&mut chunk));
+                chunk_size = 2 + aligned;
+            } else {
+                chunk_size += aligned;
+            }
+            chunk.push(field);
+        }
+        if !chunk.is_empty() || chunks.is_empty() {
+            chunks.push(chunk);
+        }
+
+        if chunks.len() == 1 {
+            return self.add(
+                name,
+                TypeRecord::FieldList {
+                    fields: chunks.pop().unwrap(),
+                },
+            );
+        }
+
+        // Build from last to first so each chunk can reference the next.
+        let mut next: Option<TypeIndex> = None;
+        for (i, mut chunk) in chunks.into_iter().rev().enumerate() {
+            if let Some(continuation) = next {
+                chunk.push(TypeRecord::ListContinuation(continuation));
+            }
+            let label = if i == 0 {
+                name.to_string()
+            } else {
+                format!("{name}_{i}")
+            };
+            next = Some(self.add(&label, TypeRecord::FieldList { fields: chunk }));
+        }
+        next.unwrap()
+    }
+}
+
 #[derive(Debug)]
 pub struct TypeStreamBuilder<A> {
     records: Vec<A>,

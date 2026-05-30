@@ -79,7 +79,12 @@ where
 
         let size = self.0.encoded_size(());
         let full_size = align_to(size + PREFIX_SIZE, RECORD_ALIGNMENT) - PREFIX_SIZE;
-        (full_size as u16).encode(constants::ENDIANESS, writer)?;
+        let full_size_u16 = u16::try_from(full_size).map_err(|_| {
+            declio::Error::new(format!(
+                "type record too large: {full_size} bytes exceeds u16 limit"
+            ))
+        })?;
+        full_size_u16.encode(constants::ENDIANESS, writer)?;
         self.0.encode((), writer)?;
 
         let padding = full_size - size;
