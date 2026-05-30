@@ -149,11 +149,9 @@ pub mod padded_rem_list {
 
             let size = elem.encoded_size(ctx);
             let padding = align_to(size, RECORD_ALIGNMENT) - size;
-            if padding != 0 {
-                let pad_byte = padding as u8 | crate::constants::LF_PAD0;
-                let padding_bytes = [0u8; RECORD_ALIGNMENT];
-                writer.write_all(&[pad_byte])?;
-                writer.write_all(&padding_bytes[0..padding - 1])?;
+            // CodeView padding is a descending run of LF_PADn markers
+            for i in (1..=padding).rev() {
+                writer.write_all(&[i as u8 | crate::constants::LF_PAD0])?;
             }
         }
         Ok(())

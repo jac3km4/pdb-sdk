@@ -75,7 +75,6 @@ where
         W: io::Write,
     {
         const PREFIX_SIZE: usize = std::mem::size_of::<u16>();
-        let padding_bytes = [0u8; RECORD_ALIGNMENT];
 
         let size = self.0.encoded_size(());
         let full_size = align_to(size + PREFIX_SIZE, RECORD_ALIGNMENT) - PREFIX_SIZE;
@@ -87,11 +86,10 @@ where
         full_size_u16.encode(constants::ENDIANESS, writer)?;
         self.0.encode((), writer)?;
 
+        // CodeView padding is a descending run of LF_PADn markers
         let padding = full_size - size;
-        if padding != 0 {
-            let pad_byte = padding as u8 | constants::LF_PAD0;
-            writer.write_all(&[pad_byte])?;
-            writer.write_all(&padding_bytes[0..padding - 1])?;
+        for i in (1..=padding).rev() {
+            writer.write_all(&[i as u8 | constants::LF_PAD0])?;
         }
         Ok(())
     }
