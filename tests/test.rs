@@ -49,7 +49,9 @@ fn roundtrip() -> Result<()> {
 
 #[test]
 fn read_generated_pdb() -> Result<()> {
-    if find_tool(&["clang-18", "clang"]).is_none() || find_tool(&["lld-link-18", "lld-link"]).is_none() {
+    if find_tool(&["clang-18", "clang"]).is_none()
+        || find_tool(&["lld-link-18", "lld-link"]).is_none()
+    {
         println!("Skipping read_generated_pdb test because clang or lld-link was not found.");
         return Ok(());
     }
@@ -74,10 +76,7 @@ fn read_generated_pdb() -> Result<()> {
 
     let hash = pdb.get_tpi_hash(&tpi)?;
     assert_matches!(
-        tpi.record(
-            hash.get_index("FormatSpec")
-                .context("missing FormatSpec")?
-        ),
+        tpi.record(hash.get_index("FormatSpec").context("missing FormatSpec")?),
         Some(TypeRecord::Struct { .. })
     );
 
