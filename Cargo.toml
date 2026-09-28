@@ -46,3 +46,4 @@ anyhow = "1.0"
 assert_matches = "1.5"
 insta = { version = "1.47.2", features = ["glob"] }
 object = "0.39"
+tempfile = "3.27.0"

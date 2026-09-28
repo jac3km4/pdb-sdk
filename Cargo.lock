@@ -366,6 +366,7 @@ dependencies = [
  "insta",
  "modular-bitfield",
  "object",
+ "tempfile",
  "thiserror",
 ]
 
