@@ -192,7 +192,6 @@ impl_bitfield_specifier_codecs!(DebugSubsectionRecordType);
     ctx = "record_type: DebugSubsectionRecordType",
     id_expr = "record_type"
 )]
-
 pub enum DebugSubsectionRecord {
     #[declio(id = "DebugSubsectionRecordType::Lines")]
     Lines {
