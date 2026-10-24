@@ -1,0 +1,31 @@
+[package]
+name = "pdb-sdk-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Keep fuzzing dependencies, lockfile, and build output separate from the root.
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+pdb-sdk = { path = ".." }
+declio = { git = "https://github.com/jac3km4/declio.git", rev = "ccc6949" }
+
+[[bin]]
+name = "pdb"
+path = "fuzz_targets/pdb.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "records"
+path = "fuzz_targets/records.rs"
+test = false
+doc = false
+bench = false

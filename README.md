@@ -15,8 +15,8 @@ files, with per-stream access.
   section headers, FPO/frame data, and module symbols/C13 subsections.
 - Build PDBs with `builders::PdbBuilder`, including supported type/ID records,
   symbols, modules, and section data, and write them to a `Write + Seek` sink.
-- No LLVM installation is needed to use the library. LLVM is only used by the
-  YAML integration tests.
+- No LLVM installation is needed to use the library or run the offline corpus.
+  LLVM is used by explicitly selected interoperability tests and fixture generation.
 
 This is not a complete implementation of every PDB/CodeView variant. Supported
 records are described by the enums in `codeview::types` and
@@ -89,10 +89,6 @@ assembles supported records and commits their streams and MSF directory to an
 output sink. Parsing and writing are fallible; callers should propagate errors
 and handle absent records rather than assuming a particular PDB layout.
 
-`PdbBuilder::commit` requires a sink positioned at zero and may leave partial
-output on error. On success, it leaves the sink after the superblock, not at EOF;
-rewind before reading it back.
-
 ## Examples
 
 Run from the repository root with `cargo run --locked --example <name>`:
@@ -119,52 +115,52 @@ Doctests need a separate command. To check MSRV compatibility, rerun both test
 commands with `+1.93.0`. The declared MSRV remains Rust 1.93; contributor tools
 such as Clippy and rustfmt use the toolchains specified in CI.
 
-### LLVM fixtures
+### Test layers
 
-YAML fixture tests **skip without LLVM**, unless `REQUIRE_LLVM=1` makes its
-absence a failure. They look for a working `llvm-pdbutil-18`, `llvm-pdbutil`, or
-`yaml2pdb` on `PATH`, in that order. Skipped conversions appear as passed in
-Cargo's summary. Linux stable CI requires LLVM 18.
+The default test run is offline: it reads a frozen, SHA-256-verified corpus from
+five MSVC/Clang and Microsoft-linker/LLD pipelines, checks independent LLVM-derived
+facts and source-level anchors, and exercises stream boundaries, malformed
+metadata, and semantic builder roundtrips. See the
+[corpus guide](tests/corpus/README.md) for coverage, provenance, and regeneration.
+The existing undocumented binary remains a regression test.
+
+LLVM-dependent tests are explicitly **ignored** by default, rather than silently
+reporting success without a tool. Linux stable CI runs them separately with LLVM
+18; invoking them without the required tool fails. They include independent LLVM
+inspection of builder output. Fuzz targets and bounded campaign instructions are
+in the [fuzzing guide](fuzz/README.md).
+
+### LLVM interoperability
+
+Writer inspection requires `llvm-pdbutil` (or `llvm-pdbutil-18`) on `PATH`.
 
 Set `LLVM_PDBUTIL` to an explicit executable path to override discovery, for
 example `LLVM_PDBUTIL=/usr/bin/llvm-pdbutil-18`. Relative paths are resolved from
 the working directory. An invalid path, non-executable file, or failing
 `--version` is an error, **not** a reason to fall back to `PATH`, even when LLVM
-is optional. A tool named `yaml2pdb` (or `yaml2pdb.exe`) is invoked directly;
-other executable names use the `yaml2pdb` subcommand. Paths containing spaces
-are supported. Conversion errors include the exit status, stdout, and stderr.
+tests are explicitly selected. Paths containing spaces are supported.
+Inspection errors include the exit status, stdout, and stderr.
 
 ```sh
 # Ubuntu 24.04
 sudo apt-get update && sudo apt-get install --no-install-recommends -y llvm-18
-REQUIRE_LLVM=1 cargo +stable test --locked --all-targets --all-features
+cargo +stable test --locked --test roundtrip -- --ignored
 ```
 
-To run only the fixtures or intentionally update their snapshots:
-
-```sh
-REQUIRE_LLVM=1 cargo +stable test --locked --test llvm_snapshots generate_and_read_pdb_from_yaml
-REQUIRE_LLVM=1 INSTA_UPDATE=always cargo +stable test --locked --test llvm_snapshots generate_and_read_pdb_from_yaml
-```
-
-Inputs are in `tests/fixtures/`; snapshots are in `tests/snapshots/`. Review
-snapshot diffs before accepting changes. Prefer LLVM 18 when reproducing CI.
-See [fixture notes](tests/fixtures/README.md) for coverage and provenance limits.
-`roundtrip` tests builder output; `real_pdb` reads the checked-in binary without
-LLVM; `llvm_snapshots` tests generated fixtures and the LLVM helper.
+`roundtrip` tests builder output and validates that LLVM can inspect it; `real_pdb`
+reads the checked-in binary without LLVM. See [fixture notes](tests/fixtures/README.md)
+for provenance limits on `tests/llvm.pdb`.
 
 In PowerShell, set variables before running Cargo:
 
 ```powershell
-$env:REQUIRE_LLVM = '1'
+
 # Optional: $env:LLVM_PDBUTIL = 'C:\Program Files\LLVM\bin\llvm-pdbutil.exe'
 $env:RUSTDOCFLAGS = '-D warnings' # For cargo doc
-$env:INSTA_UPDATE = 'always' # Only when updating snapshots
 ```
 
-Remove session variables afterward with `Remove-Item Env:INSTA_UPDATE` and
-`Remove-Item Env:REQUIRE_LLVM`. If set, also remove `Env:LLVM_PDBUTIL` and
-`Env:RUSTDOCFLAGS`.
+If set, remove session variables afterward with `Remove-Item Env:LLVM_PDBUTIL`
+and `Remove-Item Env:RUSTDOCFLAGS`.
 
 ### Formatting
 

@@ -46,12 +46,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y llvm-18
           llvm-pdbutil-18 --version
-      - name: Run tests
-        env:
-          REQUIRE_LLVM: ${{ matrix.require-llvm && '1' || '0' }}
+      - name: Run offline tests
         run: cargo +${{ matrix.toolchain }} test --locked --all-targets --all-features
+      - name: Run required LLVM interoperability tests
+        if: matrix.require-llvm
+        env:
+          LLVM_PDBUTIL: /usr/bin/llvm-pdbutil-18
+        run: cargo +${{ matrix.toolchain }} test --locked --test roundtrip -- --ignored
       - name: Run doctests
         run: cargo +${{ matrix.toolchain }} test --locked --doc --all-features
+
+  fuzz-check:
+    name: Check fuzz targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+          key: fuzz-check-${{ runner.os }}-stable
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+      - name: Check standalone fuzz harnesses
+        run: cargo +stable check --locked --manifest-path fuzz/Cargo.toml
 
   clippy:
     name: Clippy
@@ -91,4 +110,6 @@ jobs:
       - name: Install Rust toolchain
         run: rustup toolchain install nightly-2026-10-15 --profile minimal --component rustfmt --no-self-update
       - name: Run rustfmt
-        run: cargo +nightly-2026-10-15 fmt --all -- --check
+        run: |
+          cargo +nightly-2026-10-15 fmt --all -- --check
+          cargo +nightly-2026-10-15 fmt --manifest-path fuzz/Cargo.toml --all -- --check

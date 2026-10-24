@@ -6,3 +6,6 @@
 *.yaml text eol=lf
 *.snap text eol=lf
 *.pdb binary
+*.c text eol=lf
+*.py text eol=lf
+*.json text eol=lf

@@ -176,30 +176,56 @@ pub struct TypeHash {
 impl TypeHash {
     /// Gets the type index for a given name using the hash stream.
     pub fn get_index(&self, name: &str) -> Option<TypeIndex> {
-        let hash = hash_v1(name.as_bytes()) % self.bucket_count;
+        let hash = hash_v1(name.as_bytes()).checked_rem(self.bucket_count)?;
         let i = self.hash_values.iter().position(|&i| i == hash)?;
-        TypeIndex::try_from(FIRST_NON_BUILTIN_TYPE + i as u32).ok()
+        TypeIndex::try_from(FIRST_NON_BUILTIN_TYPE.checked_add(u32::try_from(i).ok()?)?).ok()
     }
 
     pub(crate) fn read<R>(mut input: R, layout: &TypeHashLayout, bucket_count: u32) -> Result<Self>
     where
         R: io::Read + io::Seek,
     {
-        input.seek(io::SeekFrom::Start(layout.hash_values.offset.into()))?;
-        let num_hash_values = layout.hash_values.length / 4;
-        let hash_values = Decode::decode(
-            (Len(num_hash_values as usize), constants::ENDIANESS),
-            &mut input,
-        )?;
-        input.seek(io::SeekFrom::Start(layout.index_offsets.offset.into()))?;
-        let num_index_offsets = layout.index_offsets.length / 8;
-        let index_offsets = Decode::decode(
-            (Len(num_index_offsets as usize), constants::ENDIANESS),
-            &mut input,
-        )?;
+        if bucket_count == 0 {
+            return Err(Error::EncodingFailed(declio::Error::new(
+                "type hash: zero buckets",
+            )));
+        }
+        let stream_len = input.seek(io::SeekFrom::End(0))?;
+        // Validate every region before decoding any length-driven collection.
+        layout.hash_values.validate(stream_len, 4, 4)?;
+        layout.index_offsets.validate(stream_len, 4, 8)?;
+        layout.hash_adjusters.validate(stream_len, 1, 1)?;
+
+        let hash_values = if layout.hash_values.length > 0 {
+            input.seek(io::SeekFrom::Start(layout.hash_values.offset.into()))?;
+            Decode::decode(
+                (
+                    Len((layout.hash_values.length / 4) as usize),
+                    constants::ENDIANESS,
+                ),
+                &mut input,
+            )?
+        } else {
+            vec![]
+        };
+        let index_offsets = if layout.index_offsets.length > 0 {
+            input.seek(io::SeekFrom::Start(layout.index_offsets.offset.into()))?;
+            Decode::decode(
+                (
+                    Len((layout.index_offsets.length / 8) as usize),
+                    constants::ENDIANESS,
+                ),
+                &mut input,
+            )?
+        } else {
+            vec![]
+        };
         let hash_adjusters = if layout.hash_adjusters.length > 0 {
             input.seek(io::SeekFrom::Start(layout.hash_adjusters.offset.into()))?;
-            Decode::decode((), &mut input)?
+            Decode::decode(
+                (),
+                &mut io::Read::take(&mut input, u64::from(layout.hash_adjusters.length)),
+            )?
         } else {
             Table::default()
         };
@@ -248,6 +274,25 @@ struct EmbeddedBuf {
 }
 
 impl EmbeddedBuf {
+    fn validate(&self, stream_len: u64, offset_alignment: u32, item_size: u32) -> Result<()> {
+        // Empty buffers can carry sentinel offsets (including u32::MAX).
+        if self.length == 0 {
+            return Ok(());
+        }
+        if !self.offset.is_multiple_of(offset_alignment) || !self.length.is_multiple_of(item_size) {
+            return Err(Error::EncodingFailed(declio::Error::new(
+                "type hash: unaligned embedded buffer",
+            )));
+        }
+        let end = u64::from(self.offset).checked_add(u64::from(self.length));
+        if end.is_none_or(|end| end > stream_len) {
+            return Err(Error::EncodingFailed(declio::Error::new(
+                "type hash: embedded buffer exceeds stream length",
+            )));
+        }
+        Ok(())
+    }
+
     fn from_encoded<A, W, Ctx, const N: u32>(
         value: &A,
         ctx: Ctx,
@@ -316,6 +361,175 @@ mod tests {
             .unwrap();
         bytes.extend_from_slice(body);
         bytes
+    }
+
+    fn hash_layout() -> TypeHashLayout {
+        TypeHashLayout {
+            hash_values: EmbeddedBuf {
+                offset: 0,
+                length: 4,
+            },
+            index_offsets: EmbeddedBuf {
+                offset: 4,
+                length: 8,
+            },
+            hash_adjusters: EmbeddedBuf {
+                offset: 12,
+                length: 16,
+            },
+        }
+    }
+
+    // Invalid metadata must be rejected before any decoder can allocate from it.
+    struct NoRead(io::Cursor<Vec<u8>>);
+
+    impl io::Read for NoRead {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            panic!("read before validating all type hash metadata");
+        }
+    }
+
+    impl io::Seek for NoRead {
+        fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+            self.0.seek(pos)
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_type_hash_metadata_before_reading() {
+        let layout = hash_layout();
+        assert!(TypeHash::read(NoRead(io::Cursor::new(vec![0; 28])), &layout, 0).is_err());
+
+        // (buffer index, offset, length): alignment, range, truncation, and
+        // offset + length overflow in u32 arithmetic, for every embedded region.
+        for (region, offset, length) in [
+            (0, 1, 4),
+            (0, 0, 1),
+            (0, 0, 3),
+            (0, 0, 5),
+            (1, 5, 8),
+            (1, 4, 4),
+            (1, 4, 7),
+            (1, 4, 9),
+            (0, 28, 4),
+            (1, 28, 8),
+            (2, 28, 16),
+            (0, 32, 4),
+            (1, 32, 8),
+            (2, 32, 16),
+            (0, 24, 8),
+            (1, 24, 8),
+            (2, 24, 8),
+            (0, 0, u32::MAX - 3),
+            (1, 4, u32::MAX - 7),
+            (2, 12, u32::MAX),
+            (0, u32::MAX - 3, 8),
+            (1, u32::MAX - 3, 8),
+            (2, u32::MAX, 16),
+        ] {
+            let mut layout = hash_layout();
+            let buffers = [
+                &mut layout.hash_values,
+                &mut layout.index_offsets,
+                &mut layout.hash_adjusters,
+            ];
+            *buffers.into_iter().nth(region).unwrap() = EmbeddedBuf { offset, length };
+            assert!(
+                TypeHash::read(NoRead(io::Cursor::new(vec![0; 28])), &layout, 1).is_err(),
+                "region {region}, offset {offset}, length {length}"
+            );
+        }
+        for len in 0..28 {
+            assert!(
+                TypeHash::read(NoRead(io::Cursor::new(vec![0; len])), &layout, 1).is_err(),
+                "truncated stream length {len}"
+            );
+        }
+    }
+
+    #[test]
+    fn reads_type_hash_regions_and_ignores_empty_sentinel_offsets() {
+        let name = "Sample";
+        let bucket_count = 17;
+        let value = hash_v1(name.as_bytes()) % bucket_count;
+        let mut bytes = value.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&FIRST_NON_BUILTIN_TYPE.to_le_bytes());
+        bytes.extend_from_slice(&0x1234u32.to_le_bytes());
+        Table::default().encode((), &mut bytes).unwrap();
+        assert_eq!(bytes.len(), 28);
+        let mut input = io::Cursor::new(&bytes);
+        let hash = TypeHash::read(&mut input, &hash_layout(), bucket_count).unwrap();
+        assert_eq!(hash.hash_values, [value]);
+        assert_eq!(hash.index_offsets.len(), 1);
+        assert_eq!(
+            u32::from(hash.index_offsets[0].index),
+            FIRST_NON_BUILTIN_TYPE
+        );
+        assert_eq!(hash.index_offsets[0].offset, 0x1234);
+        assert!(hash.hash_adjusters.entries().is_empty());
+        assert_eq!(
+            u32::from(hash.get_index(name).unwrap()),
+            FIRST_NON_BUILTIN_TYPE
+        );
+        assert_eq!(input.position(), 28);
+
+        // Keep each region nonempty in turn, ignoring the other sentinel offsets.
+        for active in 0..3 {
+            let mut layout = hash_layout();
+            for (i, buffer) in [
+                &mut layout.hash_values,
+                &mut layout.index_offsets,
+                &mut layout.hash_adjusters,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if i != active {
+                    *buffer = EmbeddedBuf {
+                        offset: u32::MAX,
+                        length: 0,
+                    };
+                }
+            }
+            let mut input = io::Cursor::new(&bytes);
+            let hash = TypeHash::read(&mut input, &layout, bucket_count).unwrap();
+            assert_eq!(hash.hash_values.len(), usize::from(active == 0));
+            assert_eq!(hash.index_offsets.len(), usize::from(active == 1));
+            assert_eq!(input.position(), [4, 12, 28][active]);
+        }
+        let empty = EmbeddedBuf {
+            offset: u32::MAX,
+            length: 0,
+        };
+        let layout = TypeHashLayout {
+            hash_values: EmbeddedBuf { ..empty },
+            index_offsets: EmbeddedBuf { ..empty },
+            hash_adjusters: empty,
+        };
+        let hash = TypeHash::read(NoRead(io::Cursor::new(vec![])), &layout, 1).unwrap();
+        assert!(hash.hash_values.is_empty());
+        assert!(hash.index_offsets.is_empty());
+        assert!(hash.hash_adjusters.entries().is_empty());
+        assert!(hash.get_index(name).is_none());
+        let zero_buckets = TypeHash {
+            bucket_count: 0,
+            ..hash
+        };
+        assert!(zero_buckets.get_index(name).is_none());
+    }
+
+    #[test]
+    fn rejects_hash_adjusters_crossing_declared_boundary() {
+        let mut bytes = vec![0; 12];
+        bytes[4..8].copy_from_slice(&FIRST_NON_BUILTIN_TYPE.to_le_bytes());
+        Table::default().encode((), &mut bytes).unwrap();
+        for length in 1..16 {
+            let mut layout = hash_layout();
+            layout.hash_adjusters.length = length;
+            let mut input = io::Cursor::new(&bytes);
+            assert!(TypeHash::read(&mut input, &layout, 1).is_err());
+            assert_eq!(input.position(), 12 + u64::from(length));
+        }
     }
 
     #[test]

@@ -1,0 +1,386 @@
+{
+  "schema": 1,
+  "fixtures": [
+    {
+      "id": "clang-link-x64",
+      "file": "clang-link-x64.pdb",
+      "sha256": "ef9a8b932dab7277b3331d2fc18bbd38cffa9d193537decb9b8072c697d47dd1",
+      "source": "program.c",
+      "source_sha256": "d784b4ad86037fecfcf9213335bc13b741e2131542840a537ac643c15bec3ac4",
+      "license": "MIT (repository-owned source)",
+      "compiler": "clang version 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5)",
+      "linker": "Microsoft (R) Incremental Linker Version 14.44.35214.0",
+      "compile_args": [
+        "--target=x86_64-pc-windows-msvc",
+        "/nologo",
+        "/c",
+        "/Z7",
+        "/Od",
+        "/GS-",
+        "/Brepro",
+        "/Foprogram.obj",
+        "program.c"
+      ],
+      "link_args": [
+        "/nologo",
+        "/nodefaultlib",
+        "/entry:entry",
+        "/subsystem:console",
+        "/debug:full",
+        "/incremental:no",
+        "/Brepro",
+        "/machine:x64",
+        "/out:program.exe",
+        "/pdb:program.pdb",
+        "program.obj"
+      ],
+      "reference_tool": "LLVM version 23.1.4",
+      "reference_args": [
+        "pdb2yaml --tpi-stream --ipi-stream program.pdb",
+        "dump --publics program.pdb",
+        "dump --modules program.pdb"
+      ],
+      "struct_anchor": {
+        "name": "Sample",
+        "size": 32,
+        "members": {
+          "value": 0,
+          "color": 4,
+          "payload": 8,
+          "values": 12,
+          "name": 24
+        }
+      },
+      "machine": "Amd64",
+      "type_kinds": {
+        "LF_ARGLIST": 2,
+        "LF_ARRAY": 2,
+        "LF_ENUM": 1,
+        "LF_FIELDLIST": 3,
+        "LF_MODIFIER": 2,
+        "LF_POINTER": 2,
+        "LF_PROCEDURE": 2,
+        "LF_STRUCTURE": 2,
+        "LF_UNION": 2
+      },
+      "id_kinds": {
+        "LF_BUILDINFO": 1,
+        "LF_FUNC_ID": 2,
+        "LF_STRING_ID": 5,
+        "LF_UDT_MOD_SRC_LINE": 2
+      },
+      "public_names": [
+        "??_C@_07GKEKDKEN@fixture?$AA@",
+        "compute",
+        "entry",
+        "result",
+        "sample"
+      ],
+      "module_count": 2
+    },
+    {
+      "id": "clang-lld-x64",
+      "file": "clang-lld-x64.pdb",
+      "sha256": "328df50f6042ef441e377a47ac1ff07a5de97528756593e2f3afcb3ed4ea5cf0",
+      "source": "program.c",
+      "source_sha256": "d784b4ad86037fecfcf9213335bc13b741e2131542840a537ac643c15bec3ac4",
+      "license": "MIT (repository-owned source)",
+      "compiler": "clang version 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5)",
+      "linker": "LLD 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5)",
+      "compile_args": [
+        "--target=x86_64-pc-windows-msvc",
+        "/nologo",
+        "/c",
+        "/Z7",
+        "/Od",
+        "/GS-",
+        "/Brepro",
+        "/Foprogram.obj",
+        "program.c"
+      ],
+      "link_args": [
+        "/nologo",
+        "/nodefaultlib",
+        "/entry:entry",
+        "/subsystem:console",
+        "/debug:full",
+        "/incremental:no",
+        "/Brepro",
+        "/machine:x64",
+        "/out:program.exe",
+        "/pdb:program.pdb",
+        "program.obj"
+      ],
+      "reference_tool": "LLVM version 23.1.4",
+      "reference_args": [
+        "pdb2yaml --tpi-stream --ipi-stream program.pdb",
+        "dump --publics program.pdb",
+        "dump --modules program.pdb"
+      ],
+      "struct_anchor": {
+        "name": "Sample",
+        "size": 32,
+        "members": {
+          "value": 0,
+          "color": 4,
+          "payload": 8,
+          "values": 12,
+          "name": 24
+        }
+      },
+      "machine": "Amd64",
+      "type_kinds": {
+        "LF_ARGLIST": 2,
+        "LF_ARRAY": 2,
+        "LF_ENUM": 1,
+        "LF_FIELDLIST": 3,
+        "LF_MODIFIER": 2,
+        "LF_POINTER": 2,
+        "LF_PROCEDURE": 2,
+        "LF_STRUCTURE": 2,
+        "LF_UNION": 2
+      },
+      "id_kinds": {
+        "LF_BUILDINFO": 1,
+        "LF_FUNC_ID": 2,
+        "LF_STRING_ID": 6,
+        "LF_UDT_SRC_LINE": 3
+      },
+      "public_names": [
+        "??_C@_07GKEKDKEN@fixture?$AA@",
+        "compute",
+        "entry",
+        "result",
+        "sample"
+      ],
+      "module_count": 2
+    },
+    {
+      "id": "clang-lld-x86",
+      "file": "clang-lld-x86.pdb",
+      "sha256": "ba63127b49acaf1a8f6314126e86e8e001a90050257522d91f7009576217a364",
+      "source": "program.c",
+      "source_sha256": "d784b4ad86037fecfcf9213335bc13b741e2131542840a537ac643c15bec3ac4",
+      "license": "MIT (repository-owned source)",
+      "compiler": "clang version 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5)",
+      "linker": "LLD 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5)",
+      "compile_args": [
+        "--target=i686-pc-windows-msvc",
+        "/nologo",
+        "/c",
+        "/Z7",
+        "/Od",
+        "/GS-",
+        "/Brepro",
+        "/Foprogram.obj",
+        "program.c"
+      ],
+      "link_args": [
+        "/nologo",
+        "/nodefaultlib",
+        "/entry:entry",
+        "/subsystem:console",
+        "/debug:full",
+        "/incremental:no",
+        "/Brepro",
+        "/machine:x86",
+        "/out:program.exe",
+        "/pdb:program.pdb",
+        "program.obj"
+      ],
+      "reference_tool": "LLVM version 23.1.4",
+      "reference_args": [
+        "pdb2yaml --tpi-stream --ipi-stream program.pdb",
+        "dump --publics program.pdb",
+        "dump --modules program.pdb"
+      ],
+      "struct_anchor": {
+        "name": "Sample",
+        "size": 28,
+        "members": {
+          "value": 0,
+          "color": 4,
+          "payload": 8,
+          "values": 12,
+          "name": 24
+        }
+      },
+      "machine": "X86",
+      "type_kinds": {
+        "LF_ARGLIST": 2,
+        "LF_ARRAY": 2,
+        "LF_ENUM": 1,
+        "LF_FIELDLIST": 3,
+        "LF_MODIFIER": 2,
+        "LF_POINTER": 2,
+        "LF_PROCEDURE": 2,
+        "LF_STRUCTURE": 2,
+        "LF_UNION": 2
+      },
+      "id_kinds": {
+        "LF_BUILDINFO": 1,
+        "LF_FUNC_ID": 2,
+        "LF_STRING_ID": 6,
+        "LF_UDT_SRC_LINE": 3
+      },
+      "public_names": [
+        "??_C@_07GKEKDKEN@fixture?$AA@",
+        "_compute",
+        "_entry",
+        "_result",
+        "_sample"
+      ],
+      "module_count": 2
+    },
+    {
+      "id": "msvc-link-x64",
+      "file": "msvc-link-x64.pdb",
+      "sha256": "18db09a8cb0b469e4f1f7381687f20c3bab07dcacf2feac4eec2bb644075e047",
+      "source": "program.c",
+      "source_sha256": "d784b4ad86037fecfcf9213335bc13b741e2131542840a537ac643c15bec3ac4",
+      "license": "MIT (repository-owned source)",
+      "compiler": "Microsoft (R) C/C++ Optimizing Compiler Version 19.44.35214 for x64",
+      "linker": "Microsoft (R) Incremental Linker Version 14.44.35214.0",
+      "compile_args": [
+        "/nologo",
+        "/c",
+        "/Z7",
+        "/Od",
+        "/GS-",
+        "/Brepro",
+        "/Foprogram.obj",
+        "program.c"
+      ],
+      "link_args": [
+        "/nologo",
+        "/nodefaultlib",
+        "/entry:entry",
+        "/subsystem:console",
+        "/debug:full",
+        "/incremental:no",
+        "/Brepro",
+        "/machine:x64",
+        "/out:program.exe",
+        "/pdb:program.pdb",
+        "program.obj"
+      ],
+      "reference_tool": "LLVM version 23.1.4",
+      "reference_args": [
+        "pdb2yaml --tpi-stream --ipi-stream program.pdb",
+        "dump --publics program.pdb",
+        "dump --modules program.pdb"
+      ],
+      "struct_anchor": {
+        "name": "Sample",
+        "size": 32,
+        "members": {
+          "value": 0,
+          "color": 4,
+          "payload": 8,
+          "values": 12,
+          "name": 24
+        }
+      },
+      "machine": "Amd64",
+      "type_kinds": {
+        "LF_ARGLIST": 2,
+        "LF_ARRAY": 2,
+        "LF_ENUM": 1,
+        "LF_FIELDLIST": 3,
+        "LF_MODIFIER": 2,
+        "LF_POINTER": 2,
+        "LF_PROCEDURE": 2,
+        "LF_STRUCTURE": 2,
+        "LF_UNION": 2
+      },
+      "id_kinds": {
+        "LF_BUILDINFO": 1,
+        "LF_FUNC_ID": 2,
+        "LF_STRING_ID": 2,
+        "LF_UDT_MOD_SRC_LINE": 3
+      },
+      "public_names": [
+        "compute",
+        "entry",
+        "result",
+        "sample"
+      ],
+      "module_count": 2
+    },
+    {
+      "id": "msvc-lld-x64",
+      "file": "msvc-lld-x64.pdb",
+      "sha256": "f076c87edf490d6b1d8d25ec0e5221cbfa5691b3e18320b9dcd6fbadf19e5b4a",
+      "source": "program.c",
+      "source_sha256": "d784b4ad86037fecfcf9213335bc13b741e2131542840a537ac643c15bec3ac4",
+      "license": "MIT (repository-owned source)",
+      "compiler": "Microsoft (R) C/C++ Optimizing Compiler Version 19.44.35214 for x64",
+      "linker": "LLD 23.1.4 (https://github.com/llvm/llvm-project 7a941dfb2877a0b8cf30323fefa85ad019e0b0f5)",
+      "compile_args": [
+        "/nologo",
+        "/c",
+        "/Z7",
+        "/Od",
+        "/GS-",
+        "/Brepro",
+        "/Foprogram.obj",
+        "program.c"
+      ],
+      "link_args": [
+        "/nologo",
+        "/nodefaultlib",
+        "/entry:entry",
+        "/subsystem:console",
+        "/debug:full",
+        "/incremental:no",
+        "/Brepro",
+        "/machine:x64",
+        "/out:program.exe",
+        "/pdb:program.pdb",
+        "program.obj"
+      ],
+      "reference_tool": "LLVM version 23.1.4",
+      "reference_args": [
+        "pdb2yaml --tpi-stream --ipi-stream program.pdb",
+        "dump --publics program.pdb",
+        "dump --modules program.pdb"
+      ],
+      "struct_anchor": {
+        "name": "Sample",
+        "size": 32,
+        "members": {
+          "value": 0,
+          "color": 4,
+          "payload": 8,
+          "values": 12,
+          "name": 24
+        }
+      },
+      "machine": "Amd64",
+      "type_kinds": {
+        "LF_ARGLIST": 2,
+        "LF_ARRAY": 2,
+        "LF_ENUM": 1,
+        "LF_FIELDLIST": 3,
+        "LF_MODIFIER": 2,
+        "LF_POINTER": 2,
+        "LF_PROCEDURE": 2,
+        "LF_STRUCTURE": 2,
+        "LF_UNION": 2
+      },
+      "id_kinds": {
+        "LF_BUILDINFO": 1,
+        "LF_FUNC_ID": 2,
+        "LF_STRING_ID": 3,
+        "LF_UDT_SRC_LINE": 3
+      },
+      "public_names": [
+        "compute",
+        "entry",
+        "result",
+        "sample"
+      ],
+      "module_count": 2
+    }
+  ]
+}

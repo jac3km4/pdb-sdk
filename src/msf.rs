@@ -336,9 +336,231 @@ impl From<StreamIndex> for u16 {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+    use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 
-    use super::{BlockIndex, DefaultMsfStreamWriter, MsfStream, MsfStreamLayout};
+    use super::{
+        BlockIndex, DEFAULT_BLOCK_SIZE, DefaultMsfStreamWriter, MsfStream, MsfStreamLayout,
+    };
+
+    struct LimitedReader {
+        inner: Cursor<Vec<u8>>,
+        max_read: usize,
+        fail_next_seek: bool,
+    }
+
+    impl Read for LimitedReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let len = buf.len().min(self.max_read);
+            self.inner.read(&mut buf[..len])
+        }
+    }
+
+    impl Seek for LimitedReader {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            let position = self.inner.seek(pos)?;
+            if std::mem::take(&mut self.fail_next_seek) {
+                return Err(io::Error::other("injected seek failure"));
+            }
+            Ok(position)
+        }
+    }
+
+    fn patterned_bytes(len: usize) -> Vec<u8> {
+        (0..len).map(|index| (index % 251) as u8).collect()
+    }
+
+    fn fragmented_bytes(payload: &[u8], block_size: usize) -> (Vec<u8>, MsfStreamLayout) {
+        let blocks: Vec<_> = [7, 2, 9, 4]
+            .into_iter()
+            .take(payload.len().div_ceil(block_size))
+            .map(BlockIndex)
+            .collect();
+        // Poison gaps and padding so a physical overread cannot match the payload.
+        let mut bytes = vec![0xa5; 10 * block_size];
+        for (chunk, block) in payload.chunks(block_size).zip(&blocks) {
+            let start = block.0 as usize * block_size;
+            bytes[start..start + chunk.len()].copy_from_slice(chunk);
+        }
+        (bytes, MsfStreamLayout::new(blocks, payload.len() as u32))
+    }
+
+    #[test]
+    fn discontiguous_stream_matches_cursor_model() {
+        for block_size in [512, 1024, 2048, 4096, 8192, 16384, 32768] {
+            let bs = block_size as usize;
+            for len in [0, 1, bs - 1, bs, bs + 1, 2 * bs, 3 * bs + 17] {
+                let expected = patterned_bytes(len);
+                let (physical, layout) = fragmented_bytes(&expected, bs);
+                for max_read in [usize::MAX, 1, 7, bs - 1] {
+                    let inner = LimitedReader {
+                        inner: Cursor::new(physical.clone()),
+                        max_read,
+                        fail_next_seek: false,
+                    };
+                    let mut stream = MsfStream::new(inner, &layout, block_size);
+                    let mut model = Cursor::new(expected.as_slice());
+                    for start in [0, bs - 1, bs, len, len + 3] {
+                        let context =
+                            format!("block={bs}, len={len}, max_read={max_read}, start={start}");
+                        stream.seek(SeekFrom::Start(start as u64)).unwrap();
+                        model.set_position(start as u64);
+                        assert_eq!(stream.read(&mut []).unwrap(), 0);
+                        let mut actual = vec![0xcc; bs + 3];
+                        let count = stream.read(&mut actual).unwrap();
+                        let available = len.saturating_sub(start).min(actual.len());
+                        assert!(count <= available, "{context}");
+                        assert_eq!(count == 0, available == 0, "{context}");
+                        // Short reads are legal; compare exactly the returned prefix.
+                        let mut wanted = vec![0xcc; actual.len()];
+                        model.read_exact(&mut wanted[..count]).unwrap();
+                        assert_eq!(actual, wanted, "{context}");
+                        assert_eq!(
+                            stream.stream_position().unwrap(),
+                            model.position(),
+                            "{context}"
+                        );
+                        assert_eq!(stream.is_eof(), model.position() >= len as u64, "{context}");
+
+                        let mut actual = Vec::new();
+                        let mut wanted = Vec::new();
+                        assert_eq!(
+                            stream.read_to_end(&mut actual).unwrap(),
+                            model.read_to_end(&mut wanted).unwrap(),
+                            "{context}"
+                        );
+                        assert_eq!(actual, wanted, "{context}");
+                        assert_eq!(
+                            stream.stream_position().unwrap(),
+                            model.position(),
+                            "{context}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn seeks_match_cursor_and_preserve_position_on_error() {
+        let (bytes, layout) = fragmented_bytes(b"abcdef", 4);
+        let mut stream = MsfStream::new(Cursor::new(bytes), &layout, 4);
+        let mut model = Cursor::new(b"abcdef");
+        for target in [
+            SeekFrom::End(-3),
+            SeekFrom::Current(-1),
+            SeekFrom::End(3),
+            SeekFrom::End(-7),
+            SeekFrom::Current(i64::MIN),
+            SeekFrom::Start(u64::MAX),
+            SeekFrom::Current(1),
+            SeekFrom::Current(i64::MIN),
+            SeekFrom::Current(i64::MAX),
+            SeekFrom::Start(0),
+        ] {
+            assert_eq!(
+                stream.seek(target).map_err(|e| e.kind()),
+                model.seek(target).map_err(|e| e.kind()),
+                "{target:?}"
+            );
+            assert_eq!(
+                stream.stream_position().unwrap(),
+                model.position(),
+                "{target:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn failed_underlying_seek_preserves_logical_position() {
+        let layout = MsfStreamLayout::new(vec![BlockIndex(3), BlockIndex(1)], 7);
+        let inner = LimitedReader {
+            inner: Cursor::new(b"----efg-----abcd".to_vec()),
+            max_read: 2,
+            fail_next_seek: false,
+        };
+        let mut stream = MsfStream::new(inner, &layout, 4);
+        stream.seek(SeekFrom::Start(2)).unwrap();
+        stream.inner.fail_next_seek = true;
+        assert_eq!(
+            stream.seek(SeekFrom::Start(5)).unwrap_err().kind(),
+            io::ErrorKind::Other
+        );
+        assert_eq!(stream.position, 2);
+        let mut bytes = [0; 3];
+        stream.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"cde");
+        assert_eq!(stream.position, 5);
+
+        stream.inner.fail_next_seek = true;
+        assert!(stream.read(&mut bytes).is_err());
+        assert_eq!(stream.position, 5);
+        stream.read_exact(&mut bytes[..2]).unwrap();
+        assert_eq!(&bytes[..2], b"fg");
+        assert_eq!(stream.position, 7);
+    }
+
+    fn write_in_chunks(
+        payload: &[u8],
+        chunk_size: usize,
+        start_block: usize,
+    ) -> (Vec<u8>, MsfStreamLayout) {
+        let bs = DEFAULT_BLOCK_SIZE as usize;
+        let mut sink = Cursor::new(vec![0xa5; start_block * bs]);
+        sink.set_position((start_block * bs) as u64);
+        let mut writer = DefaultMsfStreamWriter::new(&mut sink).unwrap();
+        assert_eq!(writer.write(&[]).unwrap(), 0);
+        let mut written = 0;
+        for chunk in payload.chunks(chunk_size) {
+            writer.write_all(chunk).unwrap();
+            written += chunk.len();
+            assert_eq!(writer.position() as usize, written);
+            assert_eq!(writer.write(&[]).unwrap(), 0);
+        }
+        writer.flush().unwrap();
+        let layout = writer.finish().unwrap();
+        assert_eq!(sink.position(), sink.get_ref().len() as u64);
+        (sink.into_inner(), layout)
+    }
+
+    #[test]
+    fn writer_chunking_is_equivalent_and_reads_back() {
+        let bs = DEFAULT_BLOCK_SIZE as usize;
+        // The second start crosses an FPM pair without a multi-megabyte payload.
+        for start_block in [3, bs] {
+            for len in [0, 1, bs - 1, bs, bs + 1, 3 * bs + 17] {
+                let payload = patterned_bytes(len);
+                let (baseline, _) = write_in_chunks(&payload, usize::MAX, start_block);
+                for chunk_size in [1, 7, bs - 1, bs, bs + 1] {
+                    let (bytes, layout) = write_in_chunks(&payload, chunk_size, start_block);
+                    assert_eq!(bytes, baseline, "len={len}, chunk_size={chunk_size}");
+
+                    assert_eq!(layout.byte_size as usize, len);
+                    assert_eq!(layout.blocks.len(), len.div_ceil(bs));
+
+                    let skipped = if start_block == bs && len > bs { 2 } else { 0 };
+                    assert_eq!(bytes.len(), (start_block + len.div_ceil(bs) + skipped) * bs);
+                    assert!(bytes[..start_block * bs].iter().all(|&byte| byte == 0xa5));
+                    if skipped != 0 {
+                        assert!(
+                            bytes[(bs + 1) * bs..(bs + 3) * bs]
+                                .iter()
+                                .all(|&byte| byte == 0xff)
+                        );
+                    }
+                    if !len.is_multiple_of(bs) {
+                        let padding = bs - len % bs;
+                        assert!(bytes[bytes.len() - padding..].iter().all(|&byte| byte == 0));
+                    }
+                    let mut reader =
+                        MsfStream::new(Cursor::new(bytes), &layout, DEFAULT_BLOCK_SIZE);
+                    let mut decoded = Vec::new();
+                    reader.read_to_end(&mut decoded).unwrap();
+                    assert_eq!(decoded, payload);
+                    assert_eq!(reader.stream_position().unwrap(), len as u64);
+                }
+            }
+        }
+    }
 
     #[test]
     fn reads_discontiguous_blocks_and_checks_seek_positions() {

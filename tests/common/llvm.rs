@@ -1,33 +1,18 @@
 use std::env;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ToolKind {
-    Pdbutil,
-    Yaml2Pdb,
-}
-
 #[derive(Debug)]
 pub struct LlvmTool {
     executable: PathBuf,
-    kind: ToolKind,
 }
 
 impl LlvmTool {
     fn new(executable: PathBuf) -> Self {
-        let kind = if executable
-            .file_stem()
-            .is_some_and(|name| name.eq_ignore_ascii_case("yaml2pdb"))
-        {
-            ToolKind::Yaml2Pdb
-        } else {
-            ToolKind::Pdbutil
-        };
-        Self { executable, kind }
+        Self { executable }
     }
 
     fn validate(&self) -> Result<()> {
@@ -49,45 +34,67 @@ impl LlvmTool {
         Ok(())
     }
 
-    fn conversion_command(&self, yaml_path: &Path, pdb_path: &Path) -> Command {
-        let mut command = Command::new(&self.executable);
-        if self.kind == ToolKind::Pdbutil {
-            command.arg("yaml2pdb");
+    fn dump_command(&self, pdb_path: &Path) -> Result<Command> {
+        if self
+            .executable
+            .file_stem()
+            .is_some_and(|name| name.eq_ignore_ascii_case("yaml2pdb"))
+        {
+            bail!(
+                "{} is a standalone yaml2pdb tool, not llvm-pdbutil; dump requires llvm-pdbutil",
+                self.executable.display()
+            );
         }
-        let mut output_arg = OsString::from("--pdb=");
-        output_arg.push(pdb_path);
-        command.arg(yaml_path).arg(output_arg);
-        command
+        let mut command = Command::new(&self.executable);
+        command.args([
+            "dump",
+            "--summary",
+            "--types",
+            "--ids",
+            "--publics",
+            "--globals",
+            "--gsi-records",
+        ]);
+        command.arg(pdb_path);
+        Ok(command)
     }
 
-    pub fn yaml2pdb(&self, yaml_path: &Path, pdb_path: &Path) -> Result<()> {
-        let output = self
-            .conversion_command(yaml_path, pdb_path)
-            .output()
-            .with_context(|| {
-                format!(
-                    "failed to execute {} for {}",
-                    self.executable.display(),
-                    yaml_path.display()
-                )
-            })?;
+    pub fn dump(&self, pdb_path: &Path) -> Result<String> {
+        let output = self.dump_command(pdb_path)?.output().with_context(|| {
+            format!(
+                "failed to execute {} dump for {}",
+                self.executable.display(),
+                pdb_path.display()
+            )
+        })?;
         if !output.status.success() {
             bail!(
-                "{} failed to generate {} from {}: {}\nstdout: {}\nstderr: {}",
+                "{} failed to dump {}: {}\nstdout: {}\nstderr: {}",
                 self.executable.display(),
                 pdb_path.display(),
-                yaml_path.display(),
                 output.status,
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr),
             );
         }
-        Ok(())
+        String::from_utf8(output.stdout).context("LLVM dump output is not UTF-8")
     }
 }
 
-pub fn find_pdbutil() -> Result<Option<LlvmTool>> {
-    find_with_override(env::var_os("LLVM_PDBUTIL").as_deref())
+pub fn require_dump_tool() -> Result<LlvmTool> {
+    let tool = if let Some(path) = env::var_os("LLVM_PDBUTIL") {
+        let tool = find_with_override(Some(&path))?.expect("explicit override returned no tool");
+        tool.dump_command(Path::new("probe.pdb"))?;
+        Some(tool)
+    } else {
+        ["llvm-pdbutil-18", "llvm-pdbutil"]
+            .into_iter()
+            .find_map(|name| {
+                let tool = LlvmTool::new(PathBuf::from(name));
+                tool.validate().is_ok().then_some(tool)
+            })
+    };
+    tool.context("no working llvm-pdbutil was found on PATH for dump; set LLVM_PDBUTIL to an llvm-pdbutil executable")
 }
 
 fn find_with_override(explicit: Option<&OsStr>) -> Result<Option<LlvmTool>> {
@@ -100,14 +107,12 @@ fn find_with_override(explicit: Option<&OsStr>) -> Result<Option<LlvmTool>> {
         if !executable.is_file() {
             bail!("LLVM_PDBUTIL is not a file: {}", path.display());
         }
-        // Keep the supplied filename when determining standalone yaml2pdb invocation style.
-        let kind = LlvmTool::new(path.to_path_buf()).kind;
-        let tool = LlvmTool { executable, kind };
+        let tool = LlvmTool { executable };
         tool.validate().context("invalid LLVM_PDBUTIL executable")?;
         return Ok(Some(tool));
     }
 
-    for name in ["llvm-pdbutil-18", "llvm-pdbutil", "yaml2pdb"] {
+    for name in ["llvm-pdbutil-18", "llvm-pdbutil"] {
         let tool = LlvmTool::new(PathBuf::from(name));
         if tool.validate().is_ok() {
             return Ok(Some(tool));
@@ -148,85 +153,49 @@ mod tests {
     }
 
     #[test]
-    fn tool_kind_uses_filename_not_full_path() {
-        for executable in ["tools with spaces/yaml2pdb", "tools/yaml2pdb.exe"] {
-            let tool = LlvmTool::new(PathBuf::from(executable));
-            assert_eq!(tool.kind, ToolKind::Yaml2Pdb);
-            let command = tool.conversion_command(Path::new("input.yaml"), Path::new("out.pdb"));
-            assert_eq!(
-                command.get_args().collect::<Vec<_>>(),
-                [OsStr::new("input.yaml"), OsStr::new("--pdb=out.pdb")]
-            );
-        }
-    }
-
-    #[test]
-    fn pdbutil_subcommand_and_paths_are_separate_arguments() {
-        let tool = LlvmTool::new(PathBuf::from("tools with spaces/llvm-pdbutil-18"));
-        let command =
-            tool.conversion_command(Path::new("input file.yaml"), Path::new("out file.pdb"));
+    fn dump_subcommand_and_paths_are_separate_arguments() -> Result<()> {
+        let tool = LlvmTool::new(PathBuf::from("tools with spaces/llvm-pdbutil"));
+        let command = tool.dump_command(Path::new("input file.pdb"))?;
         assert_eq!(command.get_program(), tool.executable.as_os_str());
         assert_eq!(
             command.get_args().collect::<Vec<_>>(),
             [
-                OsStr::new("yaml2pdb"),
-                OsStr::new("input file.yaml"),
-                OsStr::new("--pdb=out file.pdb")
+                "dump",
+                "--summary",
+                "--types",
+                "--ids",
+                "--publics",
+                "--globals",
+                "--gsi-records",
+                "input file.pdb"
             ]
+            .map(OsStr::new)
         );
+        Ok(())
     }
 
     #[test]
-    fn conversion_failure_includes_tool_input_status_and_stderr() -> Result<()> {
-        let Some(tool) = find_pdbutil()? else {
-            return Ok(());
-        };
+    #[ignore = "requires llvm-pdbutil; run with --ignored"]
+    fn dump_failure_includes_tool_input_status_and_stderr() -> Result<()> {
+        let tool = require_dump_tool()?;
         let directory = tempfile::tempdir()?;
-        let input = directory.path().join("invalid input.yaml");
-        let output = directory.path().join("output file.pdb");
-        std::fs::write(&input, b"not valid PDB YAML")?;
-        let error = tool.yaml2pdb(&input, &output).unwrap_err().to_string();
+        let input = directory.path().join("invalid input.pdb");
+        std::fs::write(&input, b"not a PDB")?;
+        let error = tool.dump(&input).unwrap_err().to_string();
         assert!(error.contains(&tool.executable.display().to_string()));
-        assert!(error.contains("invalid input.yaml"));
-        assert!(error.contains("failed to generate"));
+        assert!(error.contains("invalid input.pdb"));
+        assert!(error.contains("failed to dump"));
+        assert!(error.contains("stdout: "));
         let stderr = error.split_once("stderr: ").expect("missing stderr").1;
         assert!(!stderr.trim().is_empty(), "{error}");
         directory.close()?;
         Ok(())
     }
 
-    #[cfg(windows)]
     #[test]
-    fn output_path_preserves_native_wide_characters() {
-        use std::os::windows::ffi::{OsStrExt, OsStringExt};
-
-        let output = PathBuf::from(OsString::from_wide(&[0xd800, 0x2e, 0x70, 0x64, 0x62]));
-        let tool = LlvmTool::new(PathBuf::from("llvm-pdbutil"));
-        let command = tool.conversion_command(Path::new("input.yaml"), &output);
-        let mut expected: Vec<u16> = OsStr::new("--pdb=").encode_wide().collect();
-        expected.extend(output.as_os_str().encode_wide());
-        assert_eq!(
-            command
-                .get_args()
-                .last()
-                .unwrap()
-                .encode_wide()
-                .collect::<Vec<_>>(),
-            expected
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn output_path_preserves_non_utf8_bytes() {
-        use std::os::unix::ffi::{OsStrExt, OsStringExt};
-
-        let output = PathBuf::from(OsString::from_vec(b"out-\xff.pdb".to_vec()));
-        let tool = LlvmTool::new(PathBuf::from("llvm-pdbutil"));
-        let command = tool.conversion_command(Path::new("input.yaml"), &output);
-        assert_eq!(
-            command.get_args().last().unwrap().as_bytes(),
-            b"--pdb=out-\xff.pdb"
-        );
+    fn standalone_yaml2pdb_cannot_dump() {
+        let tool = LlvmTool::new(PathBuf::from("tools/yaml2pdb.exe"));
+        let error = tool.dump_command(Path::new("input.pdb")).unwrap_err();
+        assert!(error.to_string().contains("dump requires llvm-pdbutil"));
     }
 }
