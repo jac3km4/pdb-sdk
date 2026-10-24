@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs::File;
 use std::path::Path;
 use std::process::Command;
 use std::{env, io};
@@ -96,12 +96,17 @@ fn read_llvm_pdb() -> Result<()> {
 #[test]
 fn generate_and_read_pdb_from_yaml() {
     let Some(pdbutil) = find_pdbutil() else {
+        assert!(
+            env::var_os("REQUIRE_LLVM").is_none_or(|value| value != "1"),
+            "REQUIRE_LLVM=1 but no working llvm-pdbutil or yaml2pdb was found on PATH"
+        );
         println!("Skipping yaml2pdb test because no suitable LLVM tool was found.");
         return;
     };
 
     insta::glob!("fixtures/*.yaml", |path| {
-        let temp_pdb = env::temp_dir().join("temp_generated.pdb");
+        let temp_dir = tempfile::tempdir().expect("failed to create temporary directory");
+        let temp_pdb = temp_dir.path().join("generated.pdb");
         yaml2pdb(&pdbutil, path, &temp_pdb).expect("failed to convert yaml to pdb");
 
         let mut pdb = PdbFile::open(File::open(&temp_pdb).expect("failed to open pdb"))
@@ -112,14 +117,22 @@ fn generate_and_read_pdb_from_yaml() {
         insta::assert_debug_snapshot!("tpi", pdb.get_tpi().expect("failed to get tpi").records());
         insta::assert_debug_snapshot!("ipi", pdb.get_ipi().expect("failed to get ipi").records());
 
-        fs::remove_file(&temp_pdb).ok();
+        drop(pdb);
+        temp_dir
+            .close()
+            .expect("failed to remove temporary directory");
     });
 }
 
 fn find_pdbutil() -> Option<String> {
     ["llvm-pdbutil-18", "llvm-pdbutil", "yaml2pdb"]
         .into_iter()
-        .find(|&cmd| Command::new(cmd).arg("--version").output().is_ok())
+        .find(|&cmd| {
+            Command::new(cmd)
+                .arg("--version")
+                .output()
+                .is_ok_and(|output| output.status.success())
+        })
         .map(ToString::to_string)
 }
 
