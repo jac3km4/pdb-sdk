@@ -3,6 +3,9 @@
 See [README.md](README.md#development) for development workflows and
 `.github/workflows/ci.yml` for CI.
 
+Edit this file, not the `GEMINI.md` symlink. Windows checkouts may show only
+its target filename, `AGENTS.md`.
+
 ## Design
 
 - Preserve per-stream access without loading the whole PDB.
@@ -22,11 +25,10 @@ See [README.md](README.md#development) for development workflows and
 - `tests/roundtrip.rs`, `tests/real_pdb.rs`, `tests/llvm_snapshots.rs`: integration tests.
 - `tests/common/llvm.rs`: LLVM discovery and fixture generation.
 
-
 ## CI
 
-- Install Rust via `rustup toolchain install` with `--profile minimal
-  --no-self-update`, not an action.
+- Install Rust via `rustup toolchain install` with `--profile minimal` and
+  `--no-self-update`, not an action.
 - Use action version tags; Dependabot handles updates.
 - Separate caches by job, OS, and toolchain; write only on `master`.
 - Retain read-only permissions and superseded-run cancellation.

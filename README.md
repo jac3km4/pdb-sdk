@@ -7,9 +7,9 @@ files, with per-stream access.
 
 ## Capabilities and limits
 
-- Read the MSF container directory, then decode individual PDB streams on demand
-  through `PdbFile<R>` where `R: Read + Seek`; opening a file does not load every
-  stream. Requested streams and record collections can still allocate memory.
+- Read the MSF 7.0 container directory, then decode individual PDB streams on
+  demand through `PdbFile<R>` where `R: Read + Seek`; opening a file does not load
+  every stream. Requested streams and record collections can still allocate memory.
 - Read PDB Info and named-stream metadata, `/names` strings, DBI modules, TPI
   types, IPI IDs, type hashes, symbol records, public/global symbol indexes,
   section headers, FPO/frame data, and module symbols/C13 subsections.
@@ -89,10 +89,16 @@ assembles supported records and commits their streams and MSF directory to an
 output sink. Parsing and writing are fallible; callers should propagate errors
 and handle absent records rather than assuming a particular PDB layout.
 
+`PdbBuilder::commit` requires a sink positioned at zero and may leave partial
+output on error. On success, it leaves the sink after the superblock, not at EOF;
+rewind before reading it back.
+
 ## Examples
 
-- [Read a PDB](examples/read.rs)
-- [Build and write a PDB](examples/write.rs)
+Run from the repository root with `cargo run --locked --example <name>`:
+
+- [`read`](examples/read.rs): reads `tests/llvm.pdb`.
+- [`write`](examples/write.rs): creates or overwrites `custom.pdb`.
 
 ## Development
 
@@ -117,7 +123,8 @@ such as Clippy and rustfmt use the toolchains specified in CI.
 
 YAML fixture tests **skip without LLVM**, unless `REQUIRE_LLVM=1` makes its
 absence a failure. They look for a working `llvm-pdbutil-18`, `llvm-pdbutil`, or
-`yaml2pdb` on `PATH`, in that order. Linux stable CI requires LLVM 18.
+`yaml2pdb` on `PATH`, in that order. Skipped conversions appear as passed in
+Cargo's summary. Linux stable CI requires LLVM 18.
 
 Set `LLVM_PDBUTIL` to an explicit executable path to override discovery, for
 example `LLVM_PDBUTIL=/usr/bin/llvm-pdbutil-18`. Relative paths are resolved from

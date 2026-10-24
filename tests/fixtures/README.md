@@ -24,12 +24,14 @@ REQUIRE_LLVM=1 cargo test --locked --test llvm_snapshots
 REQUIRE_LLVM=1 INSTA_UPDATE=always cargo test --locked --test llvm_snapshots
 ```
 
-Review every snapshot diff. Snapshot bodies were preserved when the integration
-target was renamed from `test` to `llvm_snapshots`; only snapshot filenames and
-source-path metadata changed.
+Review every snapshot diff.
 
 See the [development guide](../../README.md#llvm-fixtures) for tool discovery,
 explicit executable paths, and Windows environment-variable examples.
+
+For new or replacement YAML inputs, record the source, redistribution permission,
+generation command, and LLVM version here. Generate and review snapshots with
+LLVM 18.
 
 ## Binary PDB
 
