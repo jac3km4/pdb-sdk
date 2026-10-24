@@ -478,6 +478,80 @@ pub struct MethodListEntry {
     pub vtable_offset: Option<u32>,
 }
 
+#[cfg(test)]
+mod vft_shape_tests {
+    use super::*;
+
+    #[test]
+    fn bytes_and_roundtrips() {
+        use VFTableSlotKind::{Far, Far16, Meta, Near, This};
+        for (slots, expected) in [
+            (vec![], vec![0, 0]),
+            (vec![This], vec![1, 0, 0x20]),
+            (vec![This, Near], vec![2, 0, 0x25]),
+            (vec![This, Near, Far16], vec![3, 0, 0x25, 0x10]),
+            (vec![This, Near, Far, Meta], vec![4, 0, 0x25, 0x64]),
+        ] {
+            let shape = VftShape { slots };
+            let mut bytes = vec![];
+            shape.encode((), &mut bytes).unwrap();
+            assert_eq!(bytes, expected);
+            assert_eq!(shape.encoded_size(()), bytes.len());
+            let mut input = bytes.as_slice();
+            let decoded = VftShape::decode((), &mut input).unwrap();
+            assert!(input.is_empty());
+            assert_eq!(
+                decoded.slots.iter().map(|s| *s as u8).collect::<Vec<_>>(),
+                shape.slots.iter().map(|s| *s as u8).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn odd_unused_nibble_is_ignored() {
+        let decoded = VftShape::decode((), &mut &[1, 0, 0x2f][..]).unwrap();
+        assert_eq!(decoded.slots.len(), 1);
+        assert_eq!(decoded.slots[0] as u8, 2);
+    }
+
+    #[test]
+    fn rejects_truncation_and_invalid_slots() {
+        for bytes in [
+            &[][..],
+            &[1][..],
+            &[1, 0][..],
+            &[2, 0][..],
+            &[3, 0, 0x25][..],
+            &[1, 0, 0xf0][..],
+            &[2, 0, 0x2f][..],
+        ] {
+            assert!(VftShape::decode((), &mut &bytes[..]).is_err());
+        }
+    }
+
+    #[test]
+    fn validates_u16_slot_count() {
+        let mut shape = VftShape {
+            slots: vec![VFTableSlotKind::Near; usize::from(u16::MAX)],
+        };
+        let mut bytes = vec![];
+        shape.encode((), &mut bytes).unwrap();
+        assert_eq!(&bytes[..2], &[0xff, 0xff]);
+        let decoded = VftShape::decode((), &mut bytes.as_slice()).unwrap();
+        assert_eq!(decoded.slots.len(), usize::from(u16::MAX));
+        assert!(
+            decoded
+                .slots
+                .iter()
+                .all(|s| *s as u8 == VFTableSlotKind::Near as u8)
+        );
+        shape.slots.push(VFTableSlotKind::Near);
+        let mut output = vec![];
+        assert!(shape.encode((), &mut output).is_err());
+        assert!(output.is_empty());
+    }
+}
+
 #[derive(Debug)]
 /// Shape of a virtual function table (slots).
 pub struct VftShape {
@@ -492,11 +566,11 @@ impl<Ctx: Copy> Decode<Ctx> for VftShape {
     {
         let count = u16::decode(constants::ENDIANESS, reader)?;
         let mut slots = Vec::with_capacity(count as usize);
-        for _ in 0..count.div_ceil(2) {
+        for i in (0..usize::from(count)).step_by(2) {
             let byte = u8::decode(ctx, reader)?;
             let high = byte >> 4;
             slots.push(VFTableSlotKind::from_bytes(high).map_err(declio::Error::new)?);
-            if count % 2 != 0 {
+            if i + 1 < usize::from(count) {
                 let low = byte & 0x0F;
                 slots.push(VFTableSlotKind::from_bytes(low).map_err(declio::Error::new)?);
             }
@@ -506,11 +580,22 @@ impl<Ctx: Copy> Decode<Ctx> for VftShape {
 }
 
 impl<Ctx> Encode<Ctx> for VftShape {
-    fn encode<W>(&self, _ctx: Ctx, _writer: &mut W) -> Result<(), declio::Error>
+    fn encode<W>(&self, _ctx: Ctx, writer: &mut W) -> Result<(), declio::Error>
     where
         W: std::io::Write,
     {
-        todo!()
+        let count = u16::try_from(self.slots.len())
+            .map_err(|_| declio::Error::new("VftShape slot count exceeds u16 limit"))?;
+        count.encode(constants::ENDIANESS, writer)?;
+        // LLVM TypeRecordMapping packs the first slot in the high nibble.
+        for pair in self.slots.chunks(2) {
+            let mut byte = (pair[0] as u8) << 4;
+            if let Some(slot) = pair.get(1) {
+                byte |= *slot as u8;
+            }
+            writer.write_all(&[byte])?;
+        }
+        Ok(())
     }
 }
 

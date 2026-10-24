@@ -1,5 +1,5 @@
 ---
-source: tests/test.rs
+source: tests/llvm_snapshots.rs
 expression: "pdb.get_tpi().expect(\"failed to get tpi\").records()"
 input_file: tests/fixtures/dummy2.yaml
 ---

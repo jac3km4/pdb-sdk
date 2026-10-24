@@ -12,6 +12,89 @@ pub mod types;
 
 pub(crate) const RECORD_ALIGNMENT: usize = 4;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, PartialEq, Encode, Decode, EncodedSize)]
+    #[declio(ctx_is = "constants::ENDIANESS")]
+    struct Kind(u16);
+
+    struct Body(usize);
+
+    impl Encode for Body {
+        fn encode<W: io::Write>(&self, (): (), writer: &mut W) -> Result<(), declio::Error> {
+            writer.write_all(&vec![0; self.0])?;
+            Ok(())
+        }
+    }
+
+    impl EncodedSize for Body {
+        fn encoded_size(&self, (): ()) -> usize {
+            self.0
+        }
+    }
+
+    #[test]
+    fn terminator_distinguishes_clean_eof_and_partial_prefix() {
+        assert!(
+            PrefixedRecord::<Kind>::decode_or_terminator(&mut &[][..])
+                .unwrap()
+                .is_none()
+        );
+        for byte in [0, 1, 2, 0xff] {
+            assert!(PrefixedRecord::<Kind>::decode_or_terminator(&mut &[byte][..]).is_err());
+        }
+        for len in [0, 1] {
+            assert!(
+                PrefixedRecord::<Kind>::decode_or_terminator(&mut &[len, 0][..])
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(PrefixedRecord::<Kind>::decode_with_size(&mut &[len, 0][..]).is_err());
+        }
+        assert!(PrefixedRecord::<Kind>::decode_or_terminator(&mut &[2, 0, 1][..]).is_err());
+        assert!(PrefixedRecord::<Kind>::decode_with_size(&mut &[2, 0, 1][..]).is_err());
+    }
+
+    #[test]
+    fn record_lengths_padding_and_positions() {
+        for (size, padding) in [
+            (2, &[][..]),
+            (3, &[0xf3, 0xf2, 0xf1][..]),
+            (4, &[0xf2, 0xf1][..]),
+            (5, &[0xf1][..]),
+        ] {
+            let mut bytes = vec![];
+            PrefixedRecord(Body(size)).encode((), &mut bytes).unwrap();
+            let len = size + padding.len();
+            assert_eq!(u16::from_le_bytes([bytes[0], bytes[1]]) as usize, len);
+            assert_eq!(&bytes[2 + size..], padding);
+            bytes.extend_from_slice(&[2, 0, 0x34, 0x12]);
+            let mut cursor = io::Cursor::new(bytes);
+            let (_, consumed) = PrefixedRecord::<Kind>::decode_with_size(&mut cursor).unwrap();
+            assert_eq!(consumed, (len + 2) as u64);
+            assert_eq!(cursor.position(), consumed);
+            let next = PrefixedRecord::<Kind>::decode_or_terminator(&mut cursor)
+                .unwrap()
+                .unwrap();
+            assert_eq!(next.into_inner(), Kind(0x1234));
+        }
+    }
+
+    #[test]
+    fn record_size_limits() {
+        let mut bytes = vec![];
+        PrefixedRecord(Body(65_534)).encode((), &mut bytes).unwrap();
+        assert_eq!(&bytes[..2], &65_534u16.to_le_bytes());
+        for size in [65_535, 65_536, usize::MAX] {
+            let mut bytes = vec![];
+            assert!(PrefixedRecord(Body(size)).encode((), &mut bytes).is_err());
+            assert!(bytes.is_empty());
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct PrefixedRecord<A>(pub A);
 
@@ -32,6 +115,11 @@ impl<A> PrefixedRecord<A> {
         R: io::Read,
     {
         let len = u16::decode(constants::ENDIANESS, reader)? as usize;
+        if len < 2 {
+            return Err(declio::Error::new(
+                "record length is too short for a kind tag",
+            ));
+        }
         let mut buf = vec![0u8; len];
         reader.read_exact(&mut buf)?;
         let mut slice: &[u8] = &buf;
@@ -39,7 +127,7 @@ impl<A> PrefixedRecord<A> {
         Ok((Self(res), (len + 2) as u64))
     }
 
-    /// Like [`Self::decode_with_size`], but returns `Ok(None)` when the next
+    /// Like [`Self::decode_with_size`], but returns `Ok(None)` at clean EOF or when the next
     /// record's length prefix is `< 2` (no room for the kind tag). Some
     /// PDBs pad the tail of the global symbol stream with `00 00` to align
     /// the stream byte size.
@@ -49,11 +137,15 @@ impl<A> PrefixedRecord<A> {
         R: io::Read,
     {
         let mut len_buf = [0u8; 2];
-        match reader.read_exact(&mut len_buf) {
-            Ok(()) => {}
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
-            Err(e) => return Err(e.into()),
+        loop {
+            match reader.read(&mut len_buf[..1]) {
+                Ok(0) => return Ok(None),
+                Ok(_) => break,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(e.into()),
+            }
         }
+        reader.read_exact(&mut len_buf[1..])?;
         let len = u16::from_le_bytes(len_buf) as usize;
         if len < 2 {
             return Ok(None);
@@ -77,6 +169,9 @@ where
         const PREFIX_SIZE: usize = std::mem::size_of::<u16>();
 
         let size = self.0.encoded_size(());
+        if size > usize::from(u16::MAX) {
+            return Err(declio::Error::new("record size exceeds u16 limit"));
+        }
         let full_size = align_to(size + PREFIX_SIZE, RECORD_ALIGNMENT) - PREFIX_SIZE;
         let full_size_u16 = u16::try_from(full_size).map_err(|_| {
             declio::Error::new(format!(

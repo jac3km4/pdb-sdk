@@ -21,7 +21,11 @@ fn main() -> Result<()> {
 
     let hash = reader.get_tpi_hash(&tpi)?;
     // look up a record by hashed name
-    dbg!(tpi.record(hash.get_index("core::fmt::rt::v1::FormatSpec").unwrap()));
+    if let Some(index) = hash.get_index("core::fmt::rt::v1::FormatSpec") {
+        dbg!(tpi.record(index));
+    } else {
+        eprintln!("Type core::fmt::rt::v1::FormatSpec was not found");
+    }
 
     let ipi = reader.get_ipi()?;
     // show the first ID record
@@ -32,9 +36,8 @@ fn main() -> Result<()> {
     dbg!(syms.records().first());
 
     let headers = reader.get_section_headers(&dbi)?;
-    dbg!(headers.headers().first());
     // show the first section header
-    dbg!(ipi.records().first());
+    dbg!(headers.headers().first());
 
     for dbi_mod in dbi.modules().iter().skip(1).take(1) {
         let module = reader.get_module(dbi_mod)?;

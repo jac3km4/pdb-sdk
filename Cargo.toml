@@ -6,6 +6,8 @@ rust-version = "1.93"
 description = "A Rust library for reading and writing Microsoft PDB files"
 license = "MIT"
 repository = "https://github.com/jac3km4/pdb-sdk"
+keywords = ["pdb", "codeview", "debugging", "symbols", "msf"]
+categories = ["development-tools::debugging", "parser-implementations"]
 
 [lints.rust]
 warnings = "warn"

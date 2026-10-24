@@ -16,9 +16,11 @@ See [README.md](README.md#development) for development workflows and
 
 ## Navigation
 
-- `src/lib.rs`: PDB access; `src/msf.rs`: container and streams.
+- `src/lib.rs`: public facade; `src/pdb.rs`: PDB access; `src/msf.rs`: container and streams.
+- `src/primitives.rs`: shared indices and numeric codecs; `src/builders/`: builder implementations.
 - `src/codeview/`: records; `src/codecs.rs`: encoding helpers.
-- `tests/test.rs`: round trips, real PDBs, LLVM fixtures.
+- `tests/roundtrip.rs`, `tests/real_pdb.rs`, `tests/llvm_snapshots.rs`: integration tests.
+- `tests/common/llvm.rs`: LLVM discovery and fixture generation.
 
 
 ## CI

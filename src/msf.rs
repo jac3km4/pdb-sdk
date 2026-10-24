@@ -29,8 +29,33 @@ pub(crate) struct SuperBlock {
 
 impl SuperBlock {
     /// Gets the absolute byte offset of the block map.
-    pub fn block_map_offset(&self) -> u32 {
-        self.block_map_addr.0 * self.block_size
+    pub fn block_map_offset(&self) -> u64 {
+        self.block_map_addr.to_file_pos(self.block_size)
+    }
+
+    pub fn validate(&self, file_len: u64) -> Result<()> {
+        let invalid = |message| io::Error::new(io::ErrorKind::InvalidData, message);
+        if !matches!(
+            self.block_size,
+            512 | 1024 | 2048 | 4096 | 8192 | 16384 | 32768
+        ) {
+            return Err(invalid("unsupported MSF block size").into());
+        }
+        if u64::from(self.num_blocks) * u64::from(self.block_size) > file_len {
+            return Err(invalid("MSF file is shorter than its declared block count").into());
+        }
+        if !matches!(self.free_block_map_block, 1 | 2)
+            || self.free_block_map_block >= self.num_blocks
+            || self.block_map_addr.0 >= self.num_blocks
+        {
+            return Err(invalid("invalid MSF metadata block reference").into());
+        }
+        if self.num_dir_bytes < 4
+            || u64::from(self.block_map_blocks()) * 4 > u64::from(self.block_size)
+        {
+            return Err(invalid("invalid MSF directory size").into());
+        }
+        Ok(())
     }
 
     /// Gets the number of blocks comprising the block map.
@@ -56,7 +81,7 @@ impl MsfStreamLayout {
 pub(crate) struct MsfStream<'a, R> {
     layout: &'a MsfStreamLayout,
     inner: R,
-    position: u32,
+    position: u64,
     block_size: u32,
 }
 
@@ -78,7 +103,7 @@ impl<'a, R> MsfStream<'a, R> {
 
     /// Returns whether the stream has reached the end of file.
     pub fn is_eof(&self) -> bool {
-        self.layout.byte_size == self.position
+        self.position >= u64::from(self.layout.byte_size)
     }
 }
 
@@ -87,20 +112,28 @@ where
     R: io::Read + io::Seek,
 {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let cur = self.position / self.block_size;
-        let rem_block = self.block_size - self.position % self.block_size;
-        let rem_stream = self.layout.byte_size - self.position;
-        if rem_stream == 0 {
+        if buf.is_empty() || self.is_eof() {
             return Ok(0);
-        };
-        if rem_block == self.block_size {
-            let file_pos = self.layout.blocks[cur as usize];
-            self.inner
-                .seek(io::SeekFrom::Start(file_pos.to_file_pos(self.block_size)))?;
         }
-        let len = rem_stream.min(rem_block).min(buf.len() as u32);
-        let read = self.inner.read(&mut buf[..len as usize])?;
-        self.position += read as u32;
+        let block_size = u64::from(self.block_size);
+        if block_size == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "zero MSF block size",
+            ));
+        }
+        let cur = self.position / block_size;
+        let offset = self.position % block_size;
+        let block = self.layout.blocks.get(cur as usize).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "missing MSF stream block")
+        })?;
+        self.inner.seek(io::SeekFrom::Start(
+            block.to_file_pos(self.block_size) + offset,
+        ))?;
+        let rem_stream = u64::from(self.layout.byte_size) - self.position;
+        let len = rem_stream.min(block_size - offset).min(buf.len() as u64) as usize;
+        let read = self.inner.read(&mut buf[..len])?;
+        self.position += read as u64;
         Ok(read)
     }
 }
@@ -110,26 +143,32 @@ where
     R: io::Seek,
 {
     fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
-        match pos {
-            io::SeekFrom::Start(pos) => {
-                self.position = pos as u32;
-            }
+        let target = match pos {
+            io::SeekFrom::Start(pos) => Some(pos),
             io::SeekFrom::End(offset) => {
-                self.position = (self.layout.byte_size as i64 + offset) as u32;
+                u64::from(self.layout.byte_size).checked_add_signed(offset)
             }
-            io::SeekFrom::Current(offset) => {
-                self.position = (self.position as i64 + offset) as u32;
-            }
+            io::SeekFrom::Current(offset) => self.position.checked_add_signed(offset),
         }
-        // Skip the inner seek when there's no backing block at the target
-        let cur = (self.position / self.block_size) as usize;
-        if let Some(file_pos) = self.layout.blocks.get(cur) {
-            let offset: u64 = (self.position % self.block_size).into();
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid MSF seek target"))?;
+        if self.block_size == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "zero MSF block size",
+            ));
+        }
+        if target < u64::from(self.layout.byte_size) {
+            let cur = (target / u64::from(self.block_size)) as usize;
+            let block = self.layout.blocks.get(cur).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "missing MSF stream block")
+            })?;
+            let offset = target % u64::from(self.block_size);
             self.inner.seek(io::SeekFrom::Start(
-                file_pos.to_file_pos(self.block_size) + offset,
+                block.to_file_pos(self.block_size) + offset,
             ))?;
         }
-        Ok(self.position.into())
+        self.position = target;
+        Ok(target)
     }
 }
 
@@ -180,7 +219,7 @@ impl<'a, S, const BLOCK_SIZE: u32> MsfStreamWriter<'a, S, BLOCK_SIZE> {
     where
         S: io::Write + io::Seek,
     {
-        let rem = BLOCK_SIZE - self.position % BLOCK_SIZE;
+        let rem = (BLOCK_SIZE - self.position % BLOCK_SIZE) % BLOCK_SIZE;
         self.sink.write_all(&EMPTY_BLOCK[..rem as usize])?;
 
         Ok(MsfStreamLayout::new(self.blocks, self.position))
@@ -297,9 +336,72 @@ impl From<StreamIndex> for u16 {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Cursor, Read, Seek, SeekFrom};
+    use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
-    use super::{MsfStream, MsfStreamLayout};
+    use super::{BlockIndex, DefaultMsfStreamWriter, MsfStream, MsfStreamLayout};
+
+    #[test]
+    fn reads_discontiguous_blocks_and_checks_seek_positions() {
+        let layout = MsfStreamLayout::new(vec![BlockIndex(1), BlockIndex(3)], 6);
+        let mut bytes = vec![0; 16];
+        bytes[4..8].copy_from_slice(b"abcd");
+        bytes[12..16].copy_from_slice(b"efgh");
+        let mut stream = MsfStream::new(Cursor::new(bytes), &layout, 4);
+        let mut decoded = Vec::new();
+        stream.read_to_end(&mut decoded).unwrap();
+        assert_eq!(decoded, b"abcdef");
+        assert_eq!(stream.stream_position().unwrap(), 6);
+        assert_eq!(stream.seek(SeekFrom::End(-3)).unwrap(), 3);
+        let mut pair = [0; 2];
+        stream.read_exact(&mut pair).unwrap();
+        assert_eq!(&pair, b"de");
+        assert_eq!(stream.stream_position().unwrap(), 5);
+        assert!(stream.seek(SeekFrom::Current(-6)).is_err());
+        assert_eq!(stream.stream_position().unwrap(), 5);
+        assert_eq!(stream.seek(SeekFrom::Start(u64::MAX)).unwrap(), u64::MAX);
+        assert_eq!(stream.read(&mut pair).unwrap(), 0);
+        assert!(stream.seek(SeekFrom::Current(1)).is_err());
+        assert_eq!(stream.stream_position().unwrap(), u64::MAX);
+    }
+
+    #[test]
+    fn missing_block_returns_error_and_empty_read_is_noop() {
+        let layout = MsfStreamLayout::new(vec![], 1);
+        let mut stream = MsfStream::new(Cursor::new(vec![]), &layout, 512);
+        assert_eq!(stream.read(&mut []).unwrap(), 0);
+        assert_eq!(
+            stream.read(&mut [0]).unwrap_err().kind(),
+            std::io::ErrorKind::InvalidData
+        );
+        assert!(stream.seek(SeekFrom::Start(0)).is_err());
+    }
+
+    #[test]
+    fn writer_finish_only_pads_partial_blocks() {
+        for size in [0, 1, 4095, 4096, 4097] {
+            let mut sink = Cursor::new(vec![0; 3 * 4096]);
+            sink.set_position(3 * 4096);
+            let mut writer = DefaultMsfStreamWriter::new(&mut sink).unwrap();
+            writer.write_all(&vec![0x42; size]).unwrap();
+            let layout = writer.finish().unwrap();
+            assert_eq!(layout.byte_size as usize, size);
+            assert_eq!(layout.blocks.len(), size.div_ceil(4096));
+            assert_eq!(
+                sink.stream_position().unwrap(),
+                ((3 + size.div_ceil(4096)) * 4096) as u64
+            );
+            assert!(
+                sink.get_ref()[3 * 4096..3 * 4096 + size]
+                    .iter()
+                    .all(|&byte| byte == 0x42)
+            );
+            assert!(
+                sink.get_ref()[3 * 4096 + size..]
+                    .iter()
+                    .all(|&byte| byte == 0)
+            );
+        }
+    }
 
     #[test]
     fn seek_on_empty_stream_does_not_panic() {

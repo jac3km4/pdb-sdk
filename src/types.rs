@@ -47,11 +47,23 @@ impl<A> TypeStream<A> {
             return Err(Error::UnsupportedFeature("TPI version older than V80"));
         }
 
+        let first_index = u32::from(header.type_index_begin);
+        let expected_count = u32::from(header.type_index_end)
+            .checked_sub(first_index)
+            .ok_or_else(|| {
+                Error::EncodingFailed(declio::Error::new("type stream: reversed index range"))
+            })?;
         let mut records: Vec<A> = vec![];
         let total = u64::from(header.type_record_bytes);
-        let first_index = u32::from(header.type_index_begin);
+        let mut input = input.take(total);
         let mut consumed: u64 = 0;
-        while consumed < total {
+        while input.limit() != 0 {
+            if records.len() as u64 >= u64::from(expected_count) {
+                return Err(Error::EncodingFailed(declio::Error::new(
+                    "type stream: record count exceeds index range",
+                )));
+            }
+            // The count check above bounds this addition by type_index_end.
             let type_index = first_index + records.len() as u32;
             let (record, size) = PrefixedRecord::<A>::decode_with_size(&mut input).map_err(|e| {
                 Error::EncodingFailed(declio::Error::new(format!(
@@ -63,6 +75,12 @@ impl<A> TypeStream<A> {
             records.push(record.into_inner());
         }
 
+        if records.len() as u64 != u64::from(expected_count) {
+            return Err(Error::EncodingFailed(declio::Error::new(format!(
+                "type stream: expected {expected_count} records, decoded {}",
+                records.len()
+            ))));
+        }
         Ok(TypeStream { header, records })
     }
 }
@@ -70,16 +88,16 @@ impl<A> TypeStream<A> {
 impl TypeStream<TypeRecord> {
     /// Retrieves a type or ID record by its index.
     pub fn record(&self, idx: TypeIndex) -> Option<&TypeRecord> {
-        self.records
-            .get((u32::from(idx) - FIRST_NON_BUILTIN_TYPE) as usize)
+        let offset = u32::from(idx).checked_sub(u32::from(self.header.type_index_begin))?;
+        self.records.get(usize::try_from(offset).ok()?)
     }
 }
 
 impl TypeStream<IdRecord> {
     /// Retrieves a type or ID record by its index.
     pub fn record(&self, idx: IdIndex) -> Option<&IdRecord> {
-        self.records
-            .get((u32::from(idx) - FIRST_NON_BUILTIN_TYPE) as usize)
+        let offset = u32::from(idx).checked_sub(u32::from(self.header.type_index_begin))?;
+        self.records.get(usize::try_from(offset).ok()?)
     }
 }
 
@@ -258,3 +276,123 @@ pub enum TypeStreamVersion {
 }
 
 impl_bitfield_specifier_codecs!(TypeStreamVersion);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug, PartialEq, Decode)]
+    #[declio(ctx_is = "constants::ENDIANESS")]
+    struct Kind(u16);
+
+    fn header(begin: u32, end: u32, bytes: u32) -> TypeStreamHeader {
+        let mut header = TypeStreamHeader::new(
+            TypeIndex::try_from(end).unwrap(),
+            bytes,
+            StreamIndex(u16::MAX),
+            TypeHashLayout {
+                hash_values: EmbeddedBuf {
+                    offset: 0,
+                    length: 0,
+                },
+                index_offsets: EmbeddedBuf {
+                    offset: 0,
+                    length: 0,
+                },
+                hash_adjusters: EmbeddedBuf {
+                    offset: 0,
+                    length: 0,
+                },
+            },
+        );
+        header.type_index_begin = TypeIndex::try_from(begin).unwrap();
+        header
+    }
+
+    fn stream_bytes(begin: u32, end: u32, byte_count: u32, body: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![];
+        header(begin, end, byte_count)
+            .encode((), &mut bytes)
+            .unwrap();
+        bytes.extend_from_slice(body);
+        bytes
+    }
+
+    #[test]
+    fn reads_exact_record_region_and_leaves_trailing_bytes() {
+        let bytes = stream_bytes(
+            0x2000,
+            0x2002,
+            8,
+            &[2, 0, 0x34, 0x12, 2, 0, 0x78, 0x56, 0xaa],
+        );
+        let mut input = io::Cursor::new(bytes);
+        let stream = TypeStream::<Kind>::read(&mut input).unwrap();
+        assert_eq!(stream.records, [Kind(0x1234), Kind(0x5678)]);
+        assert_eq!(input.position(), u64::from(TypeStreamHeader::BYTE_SIZE) + 8);
+        let empty = stream_bytes(0x2000, 0x2000, 0, &[0xaa]);
+        let mut input = io::Cursor::new(empty);
+        assert!(
+            TypeStream::<Kind>::read(&mut input)
+                .unwrap()
+                .records
+                .is_empty()
+        );
+        assert_eq!(input.position(), u64::from(TypeStreamHeader::BYTE_SIZE));
+    }
+
+    #[test]
+    fn rejects_record_crossing_byte_boundary() {
+        for byte_count in [1, 2, 3] {
+            // Physical bytes exist beyond the declared region, but must not be read.
+            let bytes = stream_bytes(0x2000, 0x2001, byte_count, &[2, 0, 0x34, 0x12, 0xaa]);
+            let mut input = io::Cursor::new(bytes);
+            assert!(TypeStream::<Kind>::read(&mut input).is_err());
+            assert_eq!(
+                input.position(),
+                u64::from(TypeStreamHeader::BYTE_SIZE) + u64::from(byte_count)
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_reversed_ranges_and_count_mismatches() {
+        for (begin, end, byte_count, body) in [
+            (0x2001, 0x2000, 0, &[][..]),
+            (0x2000, 0x2001, 0, &[][..]),
+            (0x2000, 0x2002, 4, &[2, 0, 1, 0][..]),
+            (0x2000, 0x2000, 4, &[2, 0, 1, 0][..]),
+            (0x2000, 0x2001, 8, &[2, 0, 1, 0, 2, 0, 2, 0][..]),
+            (0x2000, 0x2001, 4, &[2, 0, 1][..]),
+            (0x2000, 0x2001, 2, &[0, 0][..]),
+        ] {
+            let bytes = stream_bytes(begin, end, byte_count, body);
+            assert!(TypeStream::<Kind>::read(bytes.as_slice()).is_err());
+        }
+    }
+
+    #[test]
+    fn lookups_use_header_begin_and_check_bounds() {
+        let types = TypeStream {
+            header: header(0x2000, 0x2001, 0),
+            records: vec![TypeRecord::FieldList { fields: vec![] }],
+        };
+        let ids = TypeStream {
+            header: header(0x2000, 0x2001, 0),
+            records: vec![IdRecord::StringList {
+                count: 0,
+                strings: vec![],
+            }],
+        };
+        for raw in [1, 0x1000, 0x1fff, 0x2000, 0x2001, u32::MAX] {
+            assert_eq!(
+                types.record(TypeIndex::try_from(raw).unwrap()).is_some(),
+                raw == 0x2000
+            );
+            assert_eq!(
+                ids.record(IdIndex::try_from(raw).unwrap()).is_some(),
+                raw == 0x2000
+            );
+        }
+    }
+}

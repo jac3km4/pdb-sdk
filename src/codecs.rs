@@ -1,5 +1,61 @@
 pub use declio::util::byte_array;
 
+#[cfg(test)]
+mod tests {
+    use declio::{Decode, Encode, EncodedSize};
+
+    use super::*;
+
+    struct NoProgress;
+
+    impl Decode for NoProgress {
+        fn decode<R: std::io::Read>((): (), _reader: &mut R) -> Result<Self, declio::Error> {
+            Ok(Self)
+        }
+    }
+
+    #[derive(Debug, PartialEq, Encode, Decode, EncodedSize)]
+    struct Byte(u8);
+
+    #[test]
+    fn lists_reject_no_progress() {
+        assert!(rem_list::decode::<NoProgress, _, _>((), &mut &[1][..]).is_err());
+        assert!(padded_rem_list::decode::<NoProgress, _, _>((), &mut &[1, 2, 3, 4][..]).is_err());
+        assert!(
+            rem_list::decode::<NoProgress, _, _>((), &mut &[][..])
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            padded_rem_list::decode::<NoProgress, _, _>((), &mut &[][..])
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn remaining_lists_roundtrip() {
+        let elems = [Byte(1), Byte(2)];
+        let mut bytes = vec![];
+        rem_list::encode(&elems, (), &mut bytes).unwrap();
+        assert_eq!(bytes, [1, 2]);
+        assert_eq!(rem_list::encoded_size(&elems, ()), bytes.len());
+        assert_eq!(
+            rem_list::decode::<Byte, _, _>((), &mut bytes.as_slice()).unwrap(),
+            elems
+        );
+        bytes.clear();
+        padded_rem_list::encode(&elems, (), &mut bytes).unwrap();
+        assert_eq!(bytes, [1, 0xf3, 0xf2, 0xf1, 2, 0xf3, 0xf2, 0xf1]);
+        assert_eq!(padded_rem_list::encoded_size(&elems, ()), bytes.len());
+        assert_eq!(
+            padded_rem_list::decode::<Byte, _, _>((), &mut bytes.as_slice()).unwrap(),
+            elems
+        );
+        assert!(padded_rem_list::decode::<Byte, _, _>((), &mut &[1, 0xf2, 0xf1][..]).is_err());
+    }
+}
+
 pub mod optional_index {
     use declio::{Decode, Encode, Error};
 
@@ -47,7 +103,12 @@ pub mod rem_list {
         let mut elems = vec![];
         let mut slice = &buf[..];
         while !slice.is_empty() {
-            elems.push(A::decode(ctx, &mut slice)?);
+            let before = slice.len();
+            let elem = A::decode(ctx, &mut slice)?;
+            if slice.len() >= before {
+                return Err(declio::Error::new("rem_list: decoder made no progress"));
+            }
+            elems.push(elem);
         }
         Ok(elems)
     }
@@ -117,7 +178,13 @@ pub mod padded_rem_list {
         let mut slice = &buf[..];
         let mut rem = slice.len();
         while !slice.is_empty() {
-            elems.push(A::decode(ctx, &mut slice)?);
+            let elem = A::decode(ctx, &mut slice)?;
+            if slice.len() >= rem {
+                return Err(declio::Error::new(
+                    "padded_rem_list: decoder made no progress",
+                ));
+            }
+            elems.push(elem);
             let read = rem - slice.len();
 
             // If the inner decoder under-consumed the on-disk record, the

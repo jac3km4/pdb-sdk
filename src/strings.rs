@@ -31,8 +31,9 @@ pub struct Strings {
 impl Strings {
     /// Gets a string from the string table given an offset.
     pub fn get(&self, offset: StringOffset) -> Option<&str> {
-        let str = &self.bytes[offset.0 as usize..].split(|&n| n == 0).next()?;
-        str::from_utf8(str).ok()
+        let bytes = self.bytes.get(offset.0 as usize..)?;
+        let end = bytes.iter().position(|&byte| byte == 0)?;
+        str::from_utf8(&bytes[..end]).ok()
     }
 
     /// Builds an empty `Strings` table - used when a substream is sized 0
@@ -130,6 +131,25 @@ enum HashVersion {
 }
 
 impl_bitfield_specifier_codecs!(HashVersion);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn string_lookup_checks_bounds_termination_and_utf8() {
+        let mut strings = Strings::empty();
+        strings.bytes = b"hello\0\0\xff\0tail".to_vec();
+        assert_eq!(strings.get(StringOffset(0)), Some("hello"));
+        assert_eq!(strings.get(StringOffset(5)), Some(""));
+        assert_eq!(strings.get(StringOffset(6)), Some(""));
+        assert_eq!(strings.get(StringOffset(7)), None);
+        assert_eq!(strings.get(StringOffset(9)), None);
+        assert_eq!(strings.get(StringOffset(strings.bytes.len() as u32)), None);
+        assert_eq!(strings.get(StringOffset(u32::MAX)), None);
+        assert_eq!(Strings::empty().get(StringOffset(0)), None);
+    }
+}
 
 mod bucket_counts {
     static BUCKET_COUNTS: [(u32, u32); 28] = generate_buckets();

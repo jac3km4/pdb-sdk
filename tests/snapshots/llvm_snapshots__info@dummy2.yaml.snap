@@ -1,7 +1,7 @@
 ---
-source: tests/test.rs
+source: tests/llvm_snapshots.rs
 expression: pdb.get_info().unwrap()
-input_file: tests/fixtures/dummy.yaml
+input_file: tests/fixtures/dummy2.yaml
 ---
 PdbInfo {
     header: PdbInfoHeader {
