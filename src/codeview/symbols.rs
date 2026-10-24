@@ -27,7 +27,11 @@ use crate::{
 pub enum SymbolRecord {
     /// List of inlinees.
     #[declio(id = "constants::S_INLINEES.into()")]
-    Inlinees,
+    Inlinees {
+        /// Referenced inlinee indices, preceded by a u32 count.
+        #[declio(with = "codecs::counted_u32")]
+        types: Vec<TypeIndex>,
+    },
     /// End of a scope (e.g., procedure, block).
     #[declio(id = "constants::S_END.into()")]
     ScopeEnd,
@@ -158,8 +162,8 @@ pub enum SymbolRecord {
     EnvBlock {
         /// Reserved byte.
         reserved: u8,
-        /// List of fields.
-        #[declio(with = "codecs::rem_list")]
+        /// Fields followed by a final empty string (not included in this vector).
+        #[declio(with = "codecs::string_vector_z")]
         fields: Vec<StrBuf>,
     },
     /// An inline site.
@@ -376,8 +380,8 @@ pub enum SymbolRecord {
         backend_version: Version,
         /// Version string.
         version: StrBuf,
-        /// Extra compiler settings.
-        #[declio(with = "codecs::rem_list")]
+        /// Settings followed by a final empty string (not included in this vector).
+        #[declio(with = "codecs::string_vector_z")]
         extra_settings: Vec<StrBuf>,
     },
     /// Compiler version information (newer format).
@@ -464,13 +468,17 @@ pub enum SymbolRecord {
     /// `S_CALLEES`: callee references (despite this variant's name).
     #[declio(id = "constants::S_CALLEES.into()")]
     Caller {
-        /// List of type indices.
-        #[declio(with = "codecs::padded_rem_list")]
+        /// Referenced callee indices, preceded by a u32 count.
+        #[declio(with = "codecs::counted_u32")]
         types: Vec<TypeIndex>,
     },
-    /// `S_CALLERS`: caller-list kind; its body is not represented here.
+    /// `S_CALLERS`: caller references (despite this variant's name).
     #[declio(id = "constants::S_CALLERS.into()")]
-    Callee,
+    Callee {
+        /// Referenced caller indices, preceded by a u32 count.
+        #[declio(with = "codecs::counted_u32")]
+        types: Vec<TypeIndex>,
+    },
     /// A user-defined type (UDT) symbol.
     #[declio(id = "constants::S_UDT.into()")]
     Udt(UserDefinedType),
@@ -541,8 +549,8 @@ pub enum SymbolRecord {
     Annotation {
         /// Offset of the code region.
         code_offset: DataRegionOffset,
-        /// List of strings.
-        #[declio(with = "codecs::rem_list")]
+        /// Annotation strings, preceded by a u16 count.
+        #[declio(with = "codecs::counted_u16")]
         strings: Vec<StrBuf>,
     },
     /// Reference to an `S_ANNOTATION` symbol.

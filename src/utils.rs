@@ -87,6 +87,8 @@ impl<Ctx> EncodedSize<Ctx> for StrBuf {
     }
 }
 
+/// LLVM GSI ordering: byte length first, then ASCII-insensitive comparison
+/// only when both names are ASCII; otherwise compare the original bytes.
 #[derive(Debug)]
 pub(crate) struct CaseInsensitiveStr<'a>(pub &'a str);
 
@@ -95,7 +97,7 @@ impl<'a> Eq for CaseInsensitiveStr<'a> {}
 impl<'a> PartialEq for CaseInsensitiveStr<'a> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.0.eq_ignore_ascii_case(other.0)
+        self.cmp(other) == Ordering::Equal
     }
 }
 
@@ -108,39 +110,15 @@ impl<'a> PartialOrd for CaseInsensitiveStr<'a> {
 
 impl<'a> Ord for CaseInsensitiveStr<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.0
-            .chars()
-            .map(CaseInsensitiveChar)
-            .cmp(other.0.chars().map(CaseInsensitiveChar))
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct CaseInsensitiveChar(pub char);
-
-impl PartialEq for CaseInsensitiveChar {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq_ignore_ascii_case(&other.0)
-    }
-}
-
-impl Eq for CaseInsensitiveChar {}
-
-impl PartialOrd for CaseInsensitiveChar {
-    #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for CaseInsensitiveChar {
-    #[inline]
-    fn cmp(&self, other: &Self) -> Ordering {
-        if self.0.eq_ignore_ascii_case(&other.0) {
-            Ordering::Equal
-        } else {
-            self.0.cmp(&other.0)
-        }
+        self.0.len().cmp(&other.0.len()).then_with(|| {
+            if self.0.is_ascii() && other.0.is_ascii() {
+                self.0
+                    .bytes()
+                    .map(|byte| byte.to_ascii_lowercase())
+                    .cmp(other.0.bytes().map(|byte| byte.to_ascii_lowercase()))
+            } else {
+                self.0.as_bytes().cmp(other.0.as_bytes())
+            }
+        })
     }
 }

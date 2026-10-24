@@ -47,22 +47,33 @@ impl SymbolMap {
         S: NamedSymbol,
     {
         let mut bucket_starts = [0u32; IPHR_HASH];
-        let mut hash_records = Vec::with_capacity(mapping.len());
+        let mut hash_records: Vec<_> = std::iter::repeat_with(|| IndexRecord::new(SymbolOffset(0)))
+            .take(mapping.len())
+            .collect();
 
-        for (offset, el) in mapping {
+        for el in mapping.values() {
             let hash = hash_v1(el.name().unwrap_or_default().as_bytes());
             let bucket_index = hash % IPHR_HASH as u32;
             bucket_starts[bucket_index as usize] += 1;
-            hash_records.push(IndexRecord::new(SymbolOffset(offset.0 + 1)));
         }
 
         let mut sum = 0;
         for start in &mut bucket_starts {
             let val = *start;
-            *start += sum;
+            *start = sum;
             sum += val;
         }
 
+        let mut bucket_cursors = bucket_starts;
+        for (offset, symbol) in mapping {
+            let bucket = hash_v1(symbol.name().unwrap_or_default().as_bytes()) % IPHR_HASH as u32;
+            let cursor = &mut bucket_cursors[bucket as usize];
+            hash_records[*cursor as usize] = IndexRecord::new(*offset);
+            *cursor += 1;
+        }
+
+        // Keep offsets zero-based while looking up names. Only GSI's wire
+        // offsets are one-based; shared-stream and public address-map offsets are not.
         let mut slice = &bucket_starts[..];
         while let [start, tail @ ..] = slice {
             let end = tail.first().copied().unwrap_or(mapping.len() as u32);
@@ -71,17 +82,21 @@ impl SymbolMap {
                 let lhs_name = mapping
                     .get(&lhs.offset())
                     .and_then(S::name)
-                    .map(CaseInsensitiveStr);
+                    .unwrap_or_default();
                 let rhs_name = mapping
                     .get(&rhs.offset())
                     .and_then(S::name)
-                    .map(CaseInsensitiveStr);
-                lhs_name
-                    .cmp(&rhs_name)
+                    .unwrap_or_default();
+                CaseInsensitiveStr(lhs_name)
+                    .cmp(&CaseInsensitiveStr(rhs_name))
                     .then_with(|| lhs.offset().cmp(&rhs.offset()))
             });
 
             slice = tail;
+        }
+
+        for record in &mut hash_records {
+            record.offset.0 += 1;
         }
 
         let (bitmap, buckets) = allocate_buckets(&bucket_starts, mapping.len() as u32);
@@ -203,4 +218,110 @@ fn allocate_buckets(bucket_starts: &[u32], size: u32) -> (Bitmap, Vec<u32>) {
         }
     }
     (bitmap, buckets)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cmp::Ordering;
+
+    use super::*;
+
+    struct Name(String);
+
+    impl NamedSymbol for Name {
+        fn name(&self) -> Option<&str> {
+            Some(&self.0)
+        }
+    }
+
+    #[test]
+    fn llvm_name_comparison() {
+        for (lhs, rhs, expected) in [
+            ("z", "aa", Ordering::Less),
+            ("Z", "a", Ordering::Greater),
+            ("aZ", "Az", Ordering::Equal),
+            ("[", "a", Ordering::Less),
+            ("Aé", "aé", Ordering::Less),
+            ("é", "zz", Ordering::Greater),
+            ("é", "aaa", Ordering::Less),
+        ] {
+            assert_eq!(
+                CaseInsensitiveStr(lhs).cmp(&CaseInsensitiveStr(rhs)),
+                expected
+            );
+            assert_eq!(
+                CaseInsensitiveStr(lhs) == CaseInsensitiveStr(rhs),
+                expected == Ordering::Equal
+            );
+        }
+    }
+
+    #[test]
+    fn buckets_contain_their_names_in_llvm_order() {
+        // Case variants and duplicates deliberately collide. The generated names
+        // exercise many buckets and collisions across different name lengths.
+        let names = ["z", "Z", "z", "aZ", "Az", "Aé", "aé"]
+            .into_iter()
+            .map(str::to_owned)
+            .chain((0..6000).map(|i| format!("symbol_{i}")));
+        let mapping: BTreeMap<_, _> = names
+            .enumerate()
+            .map(|(i, name)| (SymbolOffset(i as u32 * 20), Name(name)))
+            .collect();
+        let map = SymbolMap::from_symbols(&mapping);
+        let mut bytes = Vec::new();
+        map.write_with_header(&mut bytes).unwrap();
+        let decoded = SymbolMap::read_with_header(&bytes[..]).unwrap();
+        let mut next = 0;
+        let mut bucket_number = 0;
+        let mut seen = Vec::new();
+        let mut has_collision = false;
+        for bucket in 0..IPHR_HASH {
+            if decoded.bitmap[bucket / 32] & (1 << (bucket % 32)) == 0 {
+                continue;
+            }
+            let start = decoded.buckets[bucket_number] as usize / 12;
+            assert_eq!(start, next);
+            bucket_number += 1;
+            let end = decoded
+                .buckets
+                .get(bucket_number)
+                .map(|offset| *offset as usize / 12)
+                .unwrap_or(mapping.len());
+            assert!(end > start);
+            has_collision |= end - start > 1;
+            let records = &decoded.hash_records[start..end];
+            for record in records {
+                assert_eq!(record.ref_count, 1);
+                assert_ne!(record.offset().0, 0);
+                let offset = SymbolOffset(record.offset().0 - 1);
+                let name = &mapping[&offset].0;
+                assert_eq!(hash_v1(name.as_bytes()) as usize % IPHR_HASH, bucket);
+                seen.push(offset);
+            }
+            for pair in records.windows(2) {
+                let lhs = SymbolOffset(pair[0].offset().0 - 1);
+                let rhs = SymbolOffset(pair[1].offset().0 - 1);
+                let order = CaseInsensitiveStr(&mapping[&lhs].0)
+                    .cmp(&CaseInsensitiveStr(&mapping[&rhs].0))
+                    .then(lhs.cmp(&rhs));
+                assert_eq!(order, Ordering::Less);
+            }
+            next = end;
+        }
+        assert!(has_collision);
+        assert_eq!(decoded.bitmap[BITMAP_SIZE - 1], 0);
+        assert_eq!(bucket_number, decoded.buckets.len());
+        seen.sort_unstable();
+        assert_eq!(seen, mapping.keys().copied().collect::<Vec<_>>());
+        assert_eq!(next, mapping.len());
+    }
+
+    #[test]
+    fn empty_index_has_no_buckets() {
+        let map = SymbolMap::from_symbols(&BTreeMap::<SymbolOffset, Name>::new());
+        assert!(map.hash_records.is_empty());
+        assert!(map.buckets.is_empty());
+        assert_eq!(map.bitmap, [0; BITMAP_SIZE]);
+    }
 }

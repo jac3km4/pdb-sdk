@@ -52,7 +52,7 @@ jobs:
         if: matrix.require-llvm
         env:
           LLVM_PDBUTIL: /usr/bin/llvm-pdbutil-18
-        run: cargo +${{ matrix.toolchain }} test --locked --test roundtrip -- --ignored
+        run: cargo +${{ matrix.toolchain }} test --locked --test roundtrip --test writer_interop -- --ignored
       - name: Run doctests
         run: cargo +${{ matrix.toolchain }} test --locked --doc --all-features
 

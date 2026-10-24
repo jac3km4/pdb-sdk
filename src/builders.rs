@@ -65,6 +65,8 @@ impl PdbBuilder {
     /// The sink must begin at position zero; it is not truncated. The Info age is
     /// copied to DBI. Record references and section metadata are not repaired.
     /// An error may leave partial writes in the sink; writes are not rolled back.
+    /// The total file extent must fit in `u32`, and the directory block address
+    /// map must fit in one physical block. Unsupported sizes return an error.
     /// On success, the final position is immediately after the rewritten superblock,
     /// not at the end of the file.
     pub fn commit<S>(mut self, mut sink: S) -> Result<()>
@@ -103,16 +105,17 @@ impl PdbBuilder {
 
         let dir_layout = directory.finish()?;
 
-        let mut addr_map = DefaultMsfStreamWriter::new(&mut sink)?;
-        dir_layout.blocks.encode(((),), &mut addr_map)?;
-        let addr_map_layout = addr_map.finish()?;
+        let addr_map_layout = write_directory_block_map(&dir_layout, &mut sink)?;
         let dir_bytes = dir_layout.byte_size;
-        let block_map_addr = addr_map_layout.blocks.first().copied().unwrap();
+        let block_map_addr = addr_map_layout.blocks.first().copied().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "empty MSF directory block map")
+        })?;
 
         allocator.allocate(dir_layout);
         allocator.allocate(addr_map_layout);
 
         let end = sink.stream_position()?;
+        validate_file_extent(end)?;
         let block_size = u64::from(DEFAULT_BLOCK_SIZE);
         if !end.is_multiple_of(block_size) {
             return Err(io::Error::new(
@@ -141,6 +144,25 @@ impl PdbBuilder {
 
         Ok(())
     }
+}
+
+fn write_directory_block_map<S>(
+    directory: &MsfStreamLayout,
+    sink: &mut S,
+) -> Result<MsfStreamLayout>
+where
+    S: io::Write + io::Seek,
+{
+    if directory.blocks.len() > (DEFAULT_BLOCK_SIZE / 4) as usize {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "MSF directory block address map exceeds one physical block",
+        )
+        .into());
+    }
+    let mut writer = DefaultMsfStreamWriter::new(sink)?;
+    directory.blocks.encode(((),), &mut writer)?;
+    Ok(writer.finish()?)
 }
 
 #[derive(Debug)]
@@ -172,7 +194,7 @@ impl Default for StreamAllocator {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::io::{Cursor, Read, Seek};
 
     use declio::{Decode, EncodedSize};
 
@@ -182,6 +204,50 @@ mod tests {
     use crate::codeview::{PrefixedRecord, RECORD_ALIGNMENT};
     use crate::info::PdbFeature;
     use crate::utils::{StrBuf, align_to};
+
+    #[test]
+    fn directory_block_map_must_fit_one_physical_block() -> Result<()> {
+        let bs = DEFAULT_BLOCK_SIZE as usize;
+        let capacity = bs / 4;
+        for count in [capacity - 1, capacity, capacity + 1] {
+            let directory = MsfStreamLayout::new(
+                (0..count)
+                    .map(|index| BlockIndex(index as u32 + 3))
+                    .collect(),
+                (count * bs) as u32,
+            );
+            // Force the address map to skip the reserved FPM pair.
+            let start = (bs + 1) * bs;
+            let mut sink = Cursor::new(vec![0xa5; start]);
+            sink.set_position(start as u64);
+            let result = write_directory_block_map(&directory, &mut sink);
+            if count > capacity {
+                assert!(result.is_err());
+                assert_eq!(sink.position(), start as u64);
+                assert_eq!(sink.get_ref().len(), start);
+                continue;
+            }
+            let layout = result?;
+            assert_eq!(layout.blocks.len(), 1);
+            assert_eq!(layout.blocks[0].0 as usize, bs + 3);
+            assert_eq!(sink.position(), ((bs + 4) * bs) as u64);
+            assert!(
+                sink.get_ref()[start..start + 2 * bs]
+                    .iter()
+                    .all(|&b| b == 0xff)
+            );
+            let mut stream = MsfStream::new(&mut sink, &layout, DEFAULT_BLOCK_SIZE);
+            for expected in &directory.blocks {
+                assert_eq!(
+                    BlockIndex::decode(constants::ENDIANESS, &mut stream)?.0,
+                    expected.0
+                );
+            }
+            assert_eq!(stream.stream_position()?, (count * 4) as u64);
+            assert_eq!(stream.read(&mut [0])?, 0);
+        }
+        Ok(())
+    }
 
     #[test]
     fn builder_roundtrip_at_fpm_boundary() -> Result<()> {

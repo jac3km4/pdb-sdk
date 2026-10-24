@@ -37,6 +37,9 @@ pub enum TypeRecord {
         /// The class containing the member pointer.
         #[declio(skip_if = "!properties.mode().is_member_pointer()")]
         containing_class: Option<TypeIndex>,
+        /// ABI representation, required for data-member and member-function pointers.
+        #[declio(skip_if = "!properties.mode().is_member_pointer()")]
+        representation: Option<PointerToMemberRepresentation>,
     },
     #[declio(id = "constants::LF_MODIFIER.into()")]
     /// Describes a modified type (e.g., const, volatile).
@@ -266,7 +269,7 @@ pub enum TypeRecord {
     },
     #[declio(id = "constants::LF_INDEX.into()")]
     /// A continuation of a field list.
-    ListContinuation(TypeIndex),
+    ListContinuation(#[declio(with = "codecs::list_continuation")] TypeIndex),
     #[declio(id = "constants::LF_METHODLIST.into()")]
     /// A list of methods.
     MethodList {
@@ -711,6 +714,39 @@ impl PointerMode {
 }
 
 impl_bitfield_specifier_codecs!(PointerMode);
+
+/// ABI representation of a pointer to a data member or member function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, EncodedSize)]
+#[declio(ctx_is = "constants::ENDIANESS", id_type = "LittleEndian<u16>")]
+pub enum PointerToMemberRepresentation {
+    /// Unspecified representation (pre-VC8).
+    #[declio(id = "0u16.into()")]
+    Unknown,
+    /// Data member in a single-inheritance class.
+    #[declio(id = "1u16.into()")]
+    SingleInheritanceData,
+    /// Data member in a multiple-inheritance class.
+    #[declio(id = "2u16.into()")]
+    MultipleInheritanceData,
+    /// Data member in a virtual-inheritance class.
+    #[declio(id = "3u16.into()")]
+    VirtualInheritanceData,
+    /// Most general data-member representation.
+    #[declio(id = "4u16.into()")]
+    GeneralData,
+    /// Member function in a single-inheritance class.
+    #[declio(id = "5u16.into()")]
+    SingleInheritanceFunction,
+    /// Member function in a multiple-inheritance class.
+    #[declio(id = "6u16.into()")]
+    MultipleInheritanceFunction,
+    /// Member function in a virtual-inheritance class.
+    #[declio(id = "7u16.into()")]
+    VirtualInheritanceFunction,
+    /// Most general member-function representation.
+    #[declio(id = "8u16.into()")]
+    GeneralFunction,
+}
 
 #[bitfield(bits = 16)]
 #[derive(Debug, Clone, Copy)]

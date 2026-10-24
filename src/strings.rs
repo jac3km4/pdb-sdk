@@ -101,9 +101,9 @@ impl StringsBuilder {
 
         for (hash, offset) in self.offsets {
             for i in 0..buckets {
-                let slot = (hash + i) % buckets;
+                let slot = (u64::from(hash % buckets) + u64::from(i)) % u64::from(buckets);
                 match ids.get_mut(slot as usize) {
-                    Some(el) if *el != 0 => {
+                    Some(el) if *el == 0 => {
                         *el = offset;
                         break;
                     }
@@ -143,6 +143,53 @@ impl_bitfield_specifier_codecs!(HashVersion);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn builder_inserts_collisions_with_wraparound() {
+        // Three distinct names all hash to the final slot in a four-bucket table.
+        let names: Vec<_> = (0..1000)
+            .map(|i| format!("name{i}"))
+            .filter(|name| hash_v1(name.as_bytes()) % 4 == 3)
+            .take(3)
+            .collect();
+        assert_eq!(names.len(), 3);
+        let mut builder = StringsBuilder::default();
+        let mut offsets = Vec::new();
+        for name in &names {
+            offsets.push(builder.bytes.len() as u32);
+            builder.add(name).unwrap();
+        }
+        let strings = builder.build();
+        assert_eq!(strings.ids, [offsets[1], offsets[2], 0, offsets[0]]);
+        assert_eq!(strings.name_count, 3);
+        let mut bytes = Vec::new();
+        strings.encode((), &mut bytes).unwrap();
+        assert_eq!(strings.encoded_size(()), bytes.len());
+        let mut reader = std::io::Cursor::new(bytes);
+        let decoded = Strings::decode((), &mut reader).unwrap();
+        assert_eq!(reader.position() as usize, reader.get_ref().len());
+        for (name, offset) in names.iter().zip(offsets) {
+            assert_eq!(decoded.get(StringOffset(offset)), Some(name.as_str()));
+            let mut slot = hash_v1(name.as_bytes()) as usize % decoded.ids.len();
+            while decoded.ids[slot] != offset {
+                assert_ne!(
+                    decoded.ids[slot], 0,
+                    "LLVM lookup stopped at an empty bucket"
+                );
+                slot = (slot + 1) % decoded.ids.len();
+            }
+        }
+    }
+
+    #[test]
+    fn probing_large_hash_does_not_overflow() {
+        let strings = StringsBuilder {
+            bytes: b"\0a\0b\0".to_vec(),
+            offsets: vec![(u32::MAX, 1), (u32::MAX, 3)],
+        }
+        .build();
+        assert_eq!(strings.ids, [3, 0, 0, 1]);
+    }
 
     #[test]
     fn string_lookup_checks_bounds_termination_and_utf8() {

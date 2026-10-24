@@ -92,6 +92,7 @@ fn main() -> Result<()> {
                 referent: Some(referent),
                 properties: PointerProperties::new(),
                 containing_class: None,
+                representation: None,
             },
         );
 

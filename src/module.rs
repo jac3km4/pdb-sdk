@@ -130,15 +130,54 @@ pub struct ModuleLayout {
     c13_bytes: u32,
 }
 
-/// A C13 subsection kind and its length-prefixed payload.
-#[derive(Debug, Encode, Decode, EncodedSize)]
-#[declio(ctx_is = "constants::ENDIANESS")]
+/// A C13 subsection kind and its length-prefixed, four-byte-aligned payload.
+#[derive(Debug)]
 pub struct DebugSubsectionEntry {
     /// Type of the debug subsection.
     pub record_type: DebugSubsectionRecordType,
-    /// Raw payload, excluding the subsection kind and length fields.
-    #[declio(via = "Bytes<'_, u32>")]
+    /// Raw payload, excluding the kind/length fields. Decoded PDB payloads
+    /// include alignment bytes because LLVM includes them in `Header.Length`.
     pub data: Vec<u8>,
+}
+
+impl Encode for DebugSubsectionEntry {
+    fn encode<W: Write>(&self, (): (), writer: &mut W) -> std::result::Result<(), declio::Error> {
+        let padding = (4 - self.data.len() % 4) % 4;
+        let length = self
+            .data
+            .len()
+            .checked_add(padding)
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| declio::Error::new("C13 subsection size exceeds u32"))?;
+        self.record_type.encode((), writer)?;
+        length.encode(constants::ENDIANESS, writer)?;
+        writer.write_all(&self.data)?;
+        writer.write_all(&[0; 3][..padding])?;
+        Ok(())
+    }
+}
+
+impl Decode for DebugSubsectionEntry {
+    fn decode<R: Read>((): (), reader: &mut R) -> std::result::Result<Self, declio::Error> {
+        let record_type = DebugSubsectionRecordType::decode((), reader)?;
+        let length = u32::decode(constants::ENDIANESS, reader)?;
+        let mut data = Vec::new();
+        reader.take(u64::from(length)).read_to_end(&mut data)?;
+        if data.len() as u64 != u64::from(length) {
+            return Err(declio::Error::new("truncated C13 subsection"));
+        }
+        // PDB lengths already include padding. Also consume external padding
+        // when reading a subsection whose header declares an unaligned length.
+        let padding = ((4 - length % 4) % 4) as usize;
+        reader.read_exact(&mut [0; 3][..padding])?;
+        Ok(Self { record_type, data })
+    }
+}
+
+impl EncodedSize for DebugSubsectionEntry {
+    fn encoded_size(&self, (): ()) -> usize {
+        8 + crate::utils::align_to(self.data.len(), 4)
+    }
 }
 
 impl DebugSubsectionEntry {
@@ -326,3 +365,153 @@ pub enum ChecksumType {
 }
 
 impl_bitfield_specifier_codecs!(ChecksumType);
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Cursor, Seek};
+
+    use super::*;
+    use crate::msf::{DEFAULT_BLOCK_SIZE, DefaultMsfStreamWriter, MsfStream};
+
+    #[test]
+    fn c13_encoding_sizes_lengths_and_positions() {
+        for len in [0, 1, 2, 3, 4, 5, 4095, 4096, 4097] {
+            let entry = DebugSubsectionEntry {
+                record_type: DebugSubsectionRecordType::StringTable,
+                data: vec![b'x'; len],
+            };
+            let mut bytes = Vec::new();
+            entry.encode((), &mut bytes).unwrap();
+            assert_eq!(entry.encoded_size(()), bytes.len());
+            assert_eq!(bytes.len(), 8 + crate::utils::align_to(len, 4));
+            assert_eq!(
+                u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize,
+                bytes.len() - 8
+            );
+            assert_eq!(&bytes[8..8 + len], entry.data);
+            assert!(bytes[8 + len..].iter().all(|&b| b == 0));
+            let end = bytes.len();
+            bytes.extend_from_slice(&[0xf6, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0]);
+            let mut reader = Cursor::new(bytes);
+            let decoded = DebugSubsectionEntry::decode((), &mut reader).unwrap();
+            assert_eq!(reader.position() as usize, end);
+            assert_eq!(decoded.record_type, entry.record_type);
+            assert_eq!(&decoded.data[..len], entry.data);
+            let mut reencoded = Vec::new();
+            decoded.encode((), &mut reencoded).unwrap();
+            assert_eq!(reencoded, reader.get_ref()[..end]);
+            let next = DebugSubsectionEntry::decode((), &mut reader).unwrap();
+            assert_eq!(next.record_type, DebugSubsectionRecordType::InlineeLines);
+            assert!(
+                matches!(next.decoded().unwrap(), DebugSubsectionRecord::InlineeLines { signature: 1, entries } if entries.is_empty())
+            );
+            assert_eq!(reader.position() as usize, end + 12);
+        }
+    }
+
+    #[test]
+    fn c13_reads_llvm_pdb_lengths_without_double_padding() {
+        // LLVM's PDB builder writes aligned Header.Length, including the NUL
+        // and padding of the string table. The next header follows immediately.
+        let bytes = [
+            0xf3, 0, 0, 0, 4, 0, 0, 0, 0, b'a', 0, 0, 0xf6, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0,
+        ];
+        let mut reader = Cursor::new(bytes);
+        let strings = DebugSubsectionEntry::decode((), &mut reader).unwrap();
+        assert_eq!(strings.data, [0, b'a', 0, 0]);
+        assert_eq!(reader.position(), 12);
+        let inlinee = DebugSubsectionEntry::decode((), &mut reader).unwrap();
+        assert_eq!(inlinee.data, [1, 0, 0, 0]);
+        assert_eq!(reader.position(), 24);
+        // Also accept an unaligned length with external alignment bytes.
+        let mut reader = Cursor::new([0xf3, 0, 0, 0, 1, 0, 0, 0, b'x', 0, 0, 0]);
+        assert_eq!(
+            DebugSubsectionEntry::decode((), &mut reader).unwrap().data,
+            [b'x']
+        );
+        assert_eq!(reader.position(), 12);
+        for end in 0..12 {
+            assert!(DebugSubsectionEntry::decode((), &mut &bytes[..end]).is_err());
+        }
+    }
+
+    #[test]
+    fn llvm_fixture_c13_checksums_and_line_values() {
+        let mut pdb = crate::PdbFile::open(Cursor::new(
+            include_bytes!("../tests/corpus/clang-lld-x64.pdb").as_slice(),
+        ))
+        .unwrap();
+        let dbi = pdb.get_dbi().unwrap();
+        let module = pdb.get_module(&dbi.modules()[0]).unwrap();
+        let mut line_fragments = Vec::new();
+        let mut checksums = 0;
+        for entry in &module.c13_records {
+            match entry.decoded().unwrap() {
+                DebugSubsectionRecord::FileChecksums { entries } => {
+                    assert_eq!(entries.len(), 1);
+                    assert_eq!(entries[0].checksum_type, ChecksumType::Md5);
+                    assert_eq!(
+                        entries[0].bytes,
+                        [
+                            0x05, 0xae, 0x82, 0xea, 0xc7, 0x16, 0x20, 0x47, 0x59, 0x37, 0x84, 0xa2,
+                            0xe1, 0x5f, 0xff, 0x74,
+                        ]
+                    );
+                    checksums += 1;
+                }
+                DebugSubsectionRecord::Lines { header, entries } => {
+                    assert_eq!(header.reloc.segment, 1);
+                    let lines: Vec<_> = entries
+                        .iter()
+                        .flat_map(|e| &e.line_numbers)
+                        .map(|line| (line.offset, line.flags & 0x00ff_ffff))
+                        .collect();
+                    line_fragments.push((header.reloc.offset, header.code_size, lines));
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(checksums, 1);
+        assert_eq!(
+            line_fragments,
+            [
+                (0, 0x36, vec![(0, 16), (0x0d, 17), (0x1d, 18)]),
+                (0x40, 0x20, vec![(0, 21), (4, 22), (0x1b, 23)]),
+            ]
+        );
+    }
+
+    #[test]
+    fn module_c13_layout_preserves_following_global_references() {
+        let mut module = Module::new(
+            vec![],
+            vec![
+                DebugSubsectionEntry {
+                    record_type: DebugSubsectionRecordType::StringTable,
+                    data: b"\0a\0".to_vec(),
+                },
+                DebugSubsectionEntry {
+                    record_type: DebugSubsectionRecordType::InlineeLines,
+                    data: 1u32.to_le_bytes().to_vec(),
+                },
+            ],
+        );
+        module.global_ref_bytes = vec![7, 8, 9];
+        let mut sink = Cursor::new(Vec::new());
+        let mut writer = DefaultMsfStreamWriter::new(&mut sink).unwrap();
+        let layout = module.write(&mut writer).unwrap();
+        assert_eq!(
+            (layout.sym_bytes, layout.c11_bytes, layout.c13_bytes),
+            (4, 0, 24)
+        );
+        assert_eq!(writer.position(), 35);
+        let stream_layout = writer.finish().unwrap();
+        let mut reader = MsfStream::new(&mut sink, &stream_layout, DEFAULT_BLOCK_SIZE);
+        let decoded = Module::read(&mut reader, &layout).unwrap();
+        assert_eq!(decoded.c13_records.len(), 2);
+        assert_eq!(decoded.c13_records[0].data, b"\0a\0\0");
+        assert_eq!(decoded.c13_records[1].data, 1u32.to_le_bytes());
+        assert_eq!(decoded.global_ref_bytes, [7, 8, 9]);
+        assert_eq!(reader.stream_position().unwrap(), 35);
+    }
+}

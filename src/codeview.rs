@@ -91,6 +91,323 @@ mod tests {
         }
     }
 
+    // Byte fixtures follow LLVM release/18.x TypeRecordMapping,
+    // SymbolRecordMapping, and CodeViewRecordIO (not encoder-derived fixtures).
+    fn exact_record<A: Encode + Decode + EncodedSize>(record: &A, expected: &[u8]) -> A {
+        for end in 0..expected.len() {
+            assert!(
+                A::decode((), &mut &expected[..end]).is_err(),
+                "prefix {end}"
+            );
+        }
+        exact_bytes(record, expected)
+    }
+
+    fn exact_bytes<A: Encode + Decode + EncodedSize>(record: &A, expected: &[u8]) -> A {
+        let mut encoded = Vec::new();
+        record.encode((), &mut encoded).unwrap();
+        assert_eq!(encoded, expected);
+        assert_eq!(record.encoded_size(()), expected.len());
+        let mut input = expected;
+        let decoded = A::decode((), &mut input).unwrap();
+        assert!(input.is_empty());
+        let mut reencoded = Vec::new();
+        decoded.encode((), &mut reencoded).unwrap();
+        assert_eq!(reencoded, expected);
+        assert_eq!(decoded.encoded_size(()), expected.len());
+        decoded
+    }
+
+    fn framed_position<A: Encode + EncodedSize + Decode>(record: A) {
+        let size = record.encoded_size(());
+        let mut bytes = Vec::new();
+        PrefixedRecord(record).encode((), &mut bytes).unwrap();
+        let end = align_to(size + 2, 4);
+        assert_eq!(bytes.len(), end);
+        assert_eq!(&bytes[..2], &((end - 2) as u16).to_le_bytes());
+        let padding: Vec<_> = (1..=end - size - 2).rev().map(|n| 0xf0 | n as u8).collect();
+        assert_eq!(&bytes[size + 2..], padding);
+        bytes.extend_from_slice(&[2, 0, 0x34, 0x12]);
+        let mut cursor = io::Cursor::new(bytes);
+        let (_, consumed) = PrefixedRecord::<A>::decode_with_size(&mut cursor).unwrap();
+        assert_eq!(consumed, end as u64);
+        assert_eq!(cursor.position(), end as u64);
+        assert_eq!(
+            PrefixedRecord::<Kind>::decode_with_size(&mut cursor)
+                .unwrap()
+                .0
+                .into_inner(),
+            Kind(0x1234)
+        );
+    }
+
+    #[test]
+    fn review_list_continuation_layout() {
+        use types::TypeRecord;
+        let record = TypeRecord::ListContinuation(crate::TypeIndex::try_from(0x1234).unwrap());
+        let decoded = exact_record(&record, &[0x04, 0x14, 0, 0, 0x34, 0x12, 0, 0]);
+        assert!(
+            matches!(decoded, TypeRecord::ListContinuation(index) if u32::from(index) == 0x1234)
+        );
+        // Reserved bytes are required but, like LLVM, need not be zero on read.
+        let decoded =
+            TypeRecord::decode((), &mut &[4, 0x14, 0xaa, 0xbb, 0x34, 0x12, 0, 0][..]).unwrap();
+        assert!(
+            matches!(decoded, TypeRecord::ListContinuation(index) if u32::from(index) == 0x1234)
+        );
+        framed_position(record);
+
+        let record = TypeRecord::FieldList {
+            fields: vec![
+                TypeRecord::ListContinuation(crate::TypeIndex::try_from(0x1234).unwrap()),
+                TypeRecord::Enumerator {
+                    properties: types::MemberProperties::new(),
+                    value: crate::Integer::from(1u32),
+                    name: "x".into(),
+                },
+            ],
+        };
+        // A field list can end cleanly at any member boundary.
+        let decoded = exact_bytes(
+            &record,
+            &[
+                3, 0x12, 4, 0x14, 0, 0, 0x34, 0x12, 0, 0, 2, 0x15, 0, 0, 1, 0, b'x', 0,
+            ],
+        );
+        assert!(
+            matches!(decoded, TypeRecord::FieldList { fields } if fields.len() == 2 && matches!(&fields[0], TypeRecord::ListContinuation(index) if u32::from(*index) == 0x1234) && matches!(&fields[1], TypeRecord::Enumerator { name, .. } if name.as_ref() == "x"))
+        );
+        framed_position(record);
+    }
+
+    #[test]
+    fn review_pointer_member_layout() {
+        use types::{
+            PointerMode, PointerProperties, PointerToMemberRepresentation as Rep, TypeRecord,
+        };
+        let reps = [
+            Rep::Unknown,
+            Rep::SingleInheritanceData,
+            Rep::MultipleInheritanceData,
+            Rep::VirtualInheritanceData,
+            Rep::GeneralData,
+            Rep::SingleInheritanceFunction,
+            Rep::MultipleInheritanceFunction,
+            Rep::VirtualInheritanceFunction,
+            Rep::GeneralFunction,
+        ];
+        for (mode, attrs) in [
+            (PointerMode::DataMember, 0x40),
+            (PointerMode::MemberFunction, 0x60),
+        ] {
+            for (n, representation) in reps.iter().enumerate() {
+                let record = TypeRecord::Pointer {
+                    referent: Some(crate::TypeIndex::try_from(0x1234).unwrap()),
+                    properties: PointerProperties::new().with_mode(mode),
+                    containing_class: Some(crate::TypeIndex::try_from(0x5678).unwrap()),
+                    representation: Some(*representation),
+                };
+                let expected = [
+                    2, 0x10, 0x34, 0x12, 0, 0, attrs, 0, 0, 0, 0x78, 0x56, 0, 0, n as u8, 0,
+                ];
+                let decoded = exact_record(&record, &expected);
+                assert!(
+                    matches!(decoded, TypeRecord::Pointer { referent: Some(index), properties, containing_class: Some(class), representation: Some(rep) } if u32::from(index) == 0x1234 && properties.into_bytes() == [attrs, 0, 0, 0] && u32::from(class) == 0x5678 && rep == *representation)
+                );
+                framed_position(record);
+            }
+        }
+        for (mode, attrs) in [
+            (PointerMode::Vanilla, 0),
+            (PointerMode::LValueReference, 0x20),
+            (PointerMode::RValueReference, 0x80),
+        ] {
+            let record = TypeRecord::Pointer {
+                referent: None,
+                properties: PointerProperties::new().with_mode(mode),
+                containing_class: None,
+                representation: None,
+            };
+            let decoded = exact_record(&record, &[2, 0x10, 0, 0, 0, 0, attrs, 0, 0, 0]);
+            assert!(
+                matches!(decoded, TypeRecord::Pointer { referent: None, containing_class: None, representation: None, properties } if properties.into_bytes() == [attrs, 0, 0, 0])
+            );
+            framed_position(record);
+        }
+        assert!(
+            TypeRecord::decode(
+                (),
+                &mut &[2, 0x10, 0, 0, 0, 0, 0x40, 0, 0, 0, 1, 0x10, 0, 0, 9, 0][..]
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn review_counted_reference_symbols() {
+        for kind in [0x1168u16, 0x115a, 0x115b] {
+            for count in 0..=2 {
+                let indices = || {
+                    (0..count)
+                        .map(|n| crate::TypeIndex::try_from(0x1234 + n).unwrap())
+                        .collect()
+                };
+                let record = match kind {
+                    0x1168 => SymbolRecord::Inlinees { types: indices() },
+                    0x115a => SymbolRecord::Caller { types: indices() },
+                    _ => SymbolRecord::Callee { types: indices() },
+                };
+                let mut expected = kind.to_le_bytes().to_vec();
+                expected.extend_from_slice(&count.to_le_bytes());
+                for n in 0..count {
+                    expected.extend_from_slice(&(0x1234 + n).to_le_bytes());
+                }
+                let decoded = exact_record(&record, &expected);
+                let types = match decoded {
+                    SymbolRecord::Inlinees { types } if kind == 0x1168 => types,
+                    SymbolRecord::Caller { types } if kind == 0x115a => types,
+                    SymbolRecord::Callee { types } if kind == 0x115b => types,
+                    _ => panic!("wrong decoded kind"),
+                };
+                assert_eq!(
+                    types.iter().map(|i| u32::from(*i)).collect::<Vec<_>>(),
+                    (0..count).map(|n| 0x1234 + n).collect::<Vec<_>>()
+                );
+                // A counted decoder must leave record padding/trailing bytes alone.
+                let mut padded = expected.clone();
+                padded.extend_from_slice(&[0xf2, 0xf1]);
+                let mut input = padded.as_slice();
+                SymbolRecord::decode((), &mut input).unwrap();
+                assert_eq!(input, [0xf2, 0xf1]);
+                framed_position(record);
+            }
+            let mut malformed = kind.to_le_bytes().to_vec();
+            malformed.extend_from_slice(&u32::MAX.to_le_bytes());
+            assert!(SymbolRecord::decode((), &mut malformed.as_slice()).is_err());
+        }
+    }
+
+    #[test]
+    fn review_annotation_count() {
+        for strings in [vec![], vec![""], vec!["a", "bc"]] {
+            let record = SymbolRecord::Annotation {
+                code_offset: DataRegionOffset::new(0x1234_5678, 2),
+                strings: strings.iter().map(|s| (*s).into()).collect(),
+            };
+            let mut expected = vec![0x19, 0x10, 0x78, 0x56, 0x34, 0x12, 2, 0];
+            expected.extend_from_slice(&(strings.len() as u16).to_le_bytes());
+            for s in &strings {
+                expected.extend_from_slice(s.as_bytes());
+                expected.push(0);
+            }
+            let decoded = exact_record(&record, &expected);
+            assert!(
+                matches!(decoded, SymbolRecord::Annotation { code_offset, strings: values } if code_offset == DataRegionOffset::new(0x1234_5678, 2) && values.iter().map(AsRef::as_ref).collect::<Vec<_>>() == strings)
+            );
+            framed_position(record);
+        }
+        for tail in [&[0xff, 0xff][..], &[2, 0, b'a', 0], &[1, 0, b'a']] {
+            let mut bytes = vec![0x19, 0x10, 0, 0, 0, 0, 1, 0];
+            bytes.extend_from_slice(tail);
+            assert!(SymbolRecord::decode((), &mut bytes.as_slice()).is_err());
+        }
+        let strings = (0..=u16::MAX).map(|_| "".into()).collect();
+        let record = SymbolRecord::Annotation {
+            code_offset: DataRegionOffset::new(0, 1),
+            strings,
+        };
+        assert!(record.encode((), &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn review_terminated_string_vectors() {
+        use symbols::{CompileProperties, Version};
+        for compile in [false, true] {
+            for strings in [vec![], vec!["a"], vec!["a", "bc"]] {
+                let values = || strings.iter().map(|s| (*s).into()).collect();
+                let record = if compile {
+                    SymbolRecord::Compile2 {
+                        properties: CompileProperties::new(),
+                        machine: 0xd0,
+                        frontend_version: Version {
+                            major: 1,
+                            minor: 2,
+                            build: 3,
+                        },
+                        backend_version: Version {
+                            major: 4,
+                            minor: 5,
+                            build: 6,
+                        },
+                        version: "v".into(),
+                        extra_settings: values(),
+                    }
+                } else {
+                    SymbolRecord::EnvBlock {
+                        reserved: 0,
+                        fields: values(),
+                    }
+                };
+                let mut expected = if compile {
+                    vec![
+                        0x16, 0x11, 0, 0, 0, 0, 0xd0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, b'v',
+                        0,
+                    ]
+                } else {
+                    vec![0x3d, 0x11, 0]
+                };
+                for s in &strings {
+                    expected.extend_from_slice(s.as_bytes());
+                    expected.push(0);
+                }
+                expected.push(0);
+                let decoded = exact_record(&record, &expected);
+                let values = match decoded {
+                    SymbolRecord::EnvBlock { reserved, fields } if !compile => {
+                        assert_eq!(reserved, 0);
+                        fields
+                    }
+                    SymbolRecord::Compile2 {
+                        properties,
+                        machine,
+                        frontend_version: front,
+                        backend_version: back,
+                        version,
+                        extra_settings,
+                    } if compile => {
+                        assert_eq!(properties.into_bytes(), [0; 4]);
+                        assert_eq!(machine, 0xd0);
+                        assert_eq!((front.major, front.minor, front.build), (1, 2, 3));
+                        assert_eq!((back.major, back.minor, back.build), (4, 5, 6));
+                        assert_eq!(version.as_ref(), "v");
+                        extra_settings
+                    }
+                    _ => panic!("wrong decoded kind"),
+                };
+                assert_eq!(
+                    values.iter().map(AsRef::as_ref).collect::<Vec<_>>(),
+                    strings
+                );
+                let mut padded = expected.clone();
+                padded.extend_from_slice(&[0xf3, 0xf2, 0xf1]);
+                let mut input = padded.as_slice();
+                SymbolRecord::decode((), &mut input).unwrap();
+                assert_eq!(input, [0xf3, 0xf2, 0xf1]);
+                framed_position(record);
+            }
+        }
+        for invalid in ["", "a\0b"] {
+            assert!(
+                SymbolRecord::EnvBlock {
+                    reserved: 0,
+                    fields: vec![invalid.into()]
+                }
+                .encode((), &mut Vec::new())
+                .is_err()
+            );
+        }
+    }
+
     #[test]
     fn record_size_limits() {
         let mut bytes = vec![];

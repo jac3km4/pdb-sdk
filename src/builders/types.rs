@@ -33,7 +33,7 @@ impl TpiBuilder {
         let mut chunk = Vec::new();
         // 2 bytes for the LF_FIELDLIST discriminator
         let mut chunk_size: usize = 2;
-        // LF_INDEX continuation record: 2 (discriminator) + 4 (TypeIndex), aligned = 8
+        // LF_INDEX: discriminator + reserved word + TypeIndex = 8 bytes.
         const CONTINUATION_SIZE: usize = 8;
 
         for field in fields {

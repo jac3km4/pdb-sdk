@@ -24,13 +24,38 @@ pub(crate) struct Table {
 }
 
 impl Table {
-    pub fn from_sized_iter<I: ExactSizeIterator<Item = (u32, u32)>>(it: I) -> Self {
-        let size = it.len() as u32;
-        let entries = it.map(|(k, v)| KeyVal::new(k, v)).collect();
-        Table {
-            size,
-            cap: size.max(8),
-            present: BitVector::new_filled(size),
+    pub fn from_sized_iter<I, H>(it: I, hash_key: H) -> Self
+    where
+        I: ExactSizeIterator<Item = (u32, u32)>,
+        H: Fn(u32) -> u32,
+    {
+        let cap = it.len().max(8);
+        let mut buckets: Vec<Option<KeyVal>> = (0..cap).map(|_| None).collect();
+        for (key, val) in it {
+            let mut slot = hash_key(key) as usize % cap;
+            while let Some(entry) = &buckets[slot] {
+                if entry.key == key {
+                    break;
+                }
+                slot = (slot + 1) % cap;
+            }
+            buckets[slot] = Some(KeyVal::new(key, val));
+        }
+        let mut present = BitVector {
+            words: cap.div_ceil(32) as u32,
+            buf: vec![0; cap.div_ceil(32) * 4],
+        };
+        let mut entries = Vec::new();
+        for (slot, entry) in buckets.into_iter().enumerate() {
+            if let Some(entry) = entry {
+                present.set(slot);
+                entries.push(entry);
+            }
+        }
+        Self {
+            size: entries.len() as u32,
+            cap: cap as u32,
+            present,
             deleted: BitVector::default(),
             entries,
         }
@@ -89,6 +114,7 @@ pub struct BitVector {
 
 impl BitVector {
     /// Sets the first `n` bits, with zero padding to a 32-bit word boundary.
+    #[allow(unused)]
     pub fn new_filled(n: u32) -> Self {
         let words = n.div_ceil(32);
         let bytes = words * 4;
@@ -145,4 +171,40 @@ pub(crate) fn hash_v1(bytes: &[u8]) -> u32 {
     hash |= 0x2020_2020;
     hash ^= hash >> 11;
     hash ^ (hash >> 16)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn table_preserves_hash_placement_and_collision_probing() {
+        let table = Table::from_sized_iter([(10, 100), (20, 200), (30, 300)].into_iter(), |_| 7);
+        assert_eq!(table.cap, 8);
+        assert_eq!(table.present.count_ones(), 3);
+        assert_eq!(table.present.get(7), Some(true));
+        assert_eq!(table.present.get(0), Some(true));
+        assert_eq!(table.present.get(1), Some(true));
+        assert_eq!(
+            table
+                .entries
+                .iter()
+                .map(|e| (e.key, e.val))
+                .collect::<Vec<_>>(),
+            [(20, 200), (30, 300), (10, 100)]
+        );
+    }
+
+    #[test]
+    fn table_uses_previous_capacity_without_growth_policy() {
+        for count in [0, 6, 8, 9, 32] {
+            let table = Table::from_sized_iter((0..count).map(|key| (key, key + 1)), |_| 7);
+            assert_eq!(table.cap, count.max(8));
+            assert_eq!(table.size, count);
+            assert_eq!(table.present.count_ones(), count);
+        }
+        let table = Table::from_sized_iter([(1, 2), (1, 3)].into_iter(), |key| key);
+        assert_eq!(table.size, 1);
+        assert_eq!(table.entries[0].val, 3);
+    }
 }

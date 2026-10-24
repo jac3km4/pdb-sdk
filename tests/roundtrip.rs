@@ -37,7 +37,7 @@ fn assert_index_range<A>(stream: &TypeStream<A>, count: usize) {
 
 fn assert_pointer(record: Option<&TypeRecord>, expected: TypeIndex, flags: PointerProperties) {
     assert_matches!(record, Some(TypeRecord::Pointer {
-        referent: Some(referent), properties, containing_class: None
+        referent: Some(referent), properties, containing_class: None, representation: None
     }) if *referent == expected && properties.into_bytes() == flags.into_bytes());
 }
 
@@ -196,6 +196,7 @@ fn chained_types() -> PdbBuilder {
             referent: Some(previous.unwrap_or(BuiltinType::I64.into())),
             properties: pointer_flags(),
             containing_class: None,
+            representation: None,
         };
         let id = builder.ipi().add(&format!("string_{i}"), string);
         let ty = builder.tpi().add(&format!("pointer_{i}"), pointer);

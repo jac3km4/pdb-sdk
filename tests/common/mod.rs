@@ -21,6 +21,7 @@ pub fn write_dummy() -> Result<io::Cursor<Vec<u8>>> {
                 .with_is_volatile(true)
                 .with_kind(PointerKind::Near64),
             containing_class: None,
+            representation: None,
         },
     );
     builder.ipi().add(

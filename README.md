@@ -47,6 +47,19 @@ Run `cargo run --locked --example <name>` from the repository root:
   addresses; it does not recover real symbols. Creates or overwrites the `.pdb`
   beside the executable with the same base name.
 
+## Writer compatibility
+
+- `TypeRecord::Pointer` includes `representation`: use `None` for ordinary
+  pointers and `Some(PointerToMemberRepresentation::...)` for member pointers.
+- `SymbolRecord::Inlinees` and `Callee` take `{ types: Vec<TypeIndex> }`;
+  reference lists and annotation strings include their required wire counts.
+- Public and global symbols may be added in any order; returned offsets remain
+  stable. Manually edited symbol maps must describe a contiguous layout.
+- Decoded PDB C13 subsection payloads may include alignment bytes. Writers pad
+  subsections and DBI file-info data to four-byte boundaries.
+- Unsupported MSF file extents and directory block maps return errors instead
+  of producing invalid block references.
+
 ## Development
 
 CI tests stable Rust on Linux and Windows, plus Rust 1.93.0 on Linux.
@@ -77,7 +90,7 @@ Linux stable CI with LLVM 18:
 ```sh
 # Ubuntu 24.04
 sudo apt-get update && sudo apt-get install --no-install-recommends -y llvm-18
-cargo +stable test --locked --test roundtrip -- --ignored
+cargo +stable test --locked --test roundtrip --test writer_interop -- --ignored
 ```
 
 Discovery uses `llvm-pdbutil` or `llvm-pdbutil-18` on `PATH`. `LLVM_PDBUTIL`

@@ -62,6 +62,125 @@ mod tests {
     }
 }
 
+/// Count-prefixed lists. Decode incrementally rather than reserving an
+/// untrusted count before any element has been read.
+macro_rules! counted_list {
+    ($name:ident, $count:ty) => {
+        pub mod $name {
+            use declio::{Decode, Encode, EncodedSize};
+
+            use crate::constants;
+
+            pub fn decode<A, Ctx: Copy, R: std::io::Read>(
+                ctx: Ctx,
+                reader: &mut R,
+            ) -> Result<Vec<A>, declio::Error>
+            where
+                A: Decode<Ctx>,
+            {
+                let count = <$count>::decode(constants::ENDIANESS, reader)?;
+                let mut elems = Vec::new();
+                for _ in 0..count {
+                    elems.push(A::decode(ctx, reader)?);
+                }
+                Ok(elems)
+            }
+
+            pub fn encode<A, Ctx: Copy, W: std::io::Write>(
+                elems: &[A],
+                ctx: Ctx,
+                writer: &mut W,
+            ) -> Result<(), declio::Error>
+            where
+                A: Encode<Ctx>,
+            {
+                let count = <$count>::try_from(elems.len())
+                    .map_err(|_| declio::Error::new("list count exceeds wire limit"))?;
+                count.encode(constants::ENDIANESS, writer)?;
+                super::rem_list::encode(elems, ctx, writer)
+            }
+
+            pub fn encoded_size<A: EncodedSize<Ctx>, Ctx: Copy>(elems: &[A], ctx: Ctx) -> usize {
+                std::mem::size_of::<$count>() + super::rem_list::encoded_size(elems, ctx)
+            }
+        }
+    };
+}
+
+counted_list!(counted_u16, u16);
+counted_list!(counted_u32, u32);
+
+/// `LF_INDEX` stores a reserved u16 before its continuation type index.
+pub mod list_continuation {
+    use declio::{Decode, Encode};
+
+    use crate::{TypeIndex, constants};
+
+    pub fn decode<Ctx, R: std::io::Read>(
+        _ctx: Ctx,
+        reader: &mut R,
+    ) -> Result<TypeIndex, declio::Error> {
+        let _reserved = u16::decode(constants::ENDIANESS, reader)?;
+        TypeIndex::decode((), reader)
+    }
+
+    pub fn encode<Ctx, W: std::io::Write>(
+        index: &TypeIndex,
+        _ctx: Ctx,
+        writer: &mut W,
+    ) -> Result<(), declio::Error> {
+        0u16.encode(constants::ENDIANESS, writer)?;
+        index.encode((), writer)
+    }
+
+    pub fn encoded_size<Ctx>(_index: &TypeIndex, _ctx: Ctx) -> usize {
+        6
+    }
+}
+
+/// NUL-terminated strings followed by a final empty string, as in LLVM's
+/// `mapStringZVectorZ`. An empty vector is encoded as a single NUL.
+pub mod string_vector_z {
+    use declio::{Decode, Encode, EncodedSize};
+
+    use crate::utils::StrBuf;
+
+    pub fn decode<Ctx: Copy, R: std::io::Read>(
+        ctx: Ctx,
+        reader: &mut R,
+    ) -> Result<Vec<StrBuf>, declio::Error> {
+        let mut strings = Vec::new();
+        loop {
+            let string = StrBuf::decode(ctx, reader)?;
+            if string.as_ref().is_empty() {
+                return Ok(strings);
+            }
+            strings.push(string);
+        }
+    }
+
+    pub fn encode<Ctx: Copy, W: std::io::Write>(
+        strings: &[StrBuf],
+        ctx: Ctx,
+        writer: &mut W,
+    ) -> Result<(), declio::Error> {
+        // Empty strings would terminate the vector early; embedded NULs would
+        // split an element and make the decoded vector differ from the input.
+        if strings
+            .iter()
+            .any(|s| s.as_ref().is_empty() || s.as_ref().contains('\0'))
+        {
+            return Err(declio::Error::new("invalid string-vector element"));
+        }
+        super::rem_list::encode(strings, ctx, writer)?;
+        0u8.encode((), writer)
+    }
+
+    pub fn encoded_size<Ctx: Copy>(strings: &[StrBuf], ctx: Ctx) -> usize {
+        1 + strings.iter().map(|s| s.encoded_size(ctx)).sum::<usize>()
+    }
+}
+
 /// Four-byte little-endian optional index adapter.
 ///
 /// Encoding writes zero for `None`; decoding maps any failed `TryFrom<u32>`
@@ -103,8 +222,11 @@ pub mod optional_index {
 ///
 /// Decoding rejects elements that consume no bytes.
 pub mod rem_list {
-    use declio::{Decode, Encode, EncodedSize};
+    #[cfg(test)]
+    use declio::Decode;
+    use declio::{Encode, EncodedSize};
 
+    #[cfg(test)]
     pub fn decode<A, Ctx, R>(ctx: Ctx, reader: &mut R) -> Result<Vec<A>, declio::Error>
     where
         A: Decode<Ctx>,

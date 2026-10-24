@@ -76,15 +76,14 @@ pub struct NamedStreams {
 impl NamedStreams {
     /// Iterates over UTF-8 stream names and their MSF indices.
     ///
-    /// Names that are not valid UTF-8 are skipped; fixed-index streams need not
-    /// appear in this map.
+    /// Invalid offsets, unterminated/non-UTF-8 names, and indices exceeding
+    /// `u16` are skipped; fixed-index streams need not appear in this map.
     pub fn iter(&self) -> impl Iterator<Item = (&str, StreamIndex)> {
         self.offset_index_map.entries().iter().filter_map(|kv| {
-            let v = &self.name_buffer[kv.key as usize..]
-                .split(|&n| n == 0)
-                .next()?;
-            let str = std::str::from_utf8(v).ok()?;
-            Some((str, StreamIndex(kv.val as u16)))
+            let bytes = self.name_buffer.get(kv.key as usize..)?;
+            let end = bytes.iter().position(|&b| b == 0)?;
+            let name = std::str::from_utf8(&bytes[..end]).ok()?;
+            Some((name, StreamIndex(u16::try_from(kv.val).ok()?)))
         })
     }
 
@@ -148,3 +147,29 @@ pub enum PdbFeature {
 }
 
 impl_bitfield_specifier_codecs!(PdbFeature);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn named_streams_skip_malformed_offsets_names_and_indices() {
+        let streams = NamedStreams {
+            name_buffer: b"/ok\0\xff\0unterminated".to_vec(),
+            offset_index_map: Table::from_sized_iter(
+                [(0, 7), (4, 8), (6, 9), (u32::MAX, 10), (1, u32::MAX)].into_iter(),
+                |key| key,
+            ),
+        };
+        assert_eq!(
+            streams
+                .iter()
+                .map(|(name, index)| (name, index.0))
+                .collect::<Vec<_>>(),
+            [("/ok", 7)]
+        );
+        assert_eq!(streams.get("/ok").map(|index| index.0), Some(7));
+        assert!(streams.get("unterminated").is_none());
+        assert!(format!("{streams:?}").contains("/ok"));
+    }
+}

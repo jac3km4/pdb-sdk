@@ -26,6 +26,7 @@ fn main() -> Result<()> {
                 .with_is_volatile(true)
                 .with_kind(PointerKind::Near64),
             containing_class: None,
+            representation: None,
         },
     );
     builder.tpi().add(

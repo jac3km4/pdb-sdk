@@ -16,6 +16,17 @@ pub(crate) const DEFAULT_BLOCK_SIZE: u32 = 4096;
 pub(crate) const EMPTY_BLOCK: &[u8] = &[0; DEFAULT_BLOCK_SIZE as usize];
 pub(crate) const FULL_BLOCK: &[u8] = &[0xff; DEFAULT_BLOCK_SIZE as usize];
 
+pub(crate) fn validate_file_extent(extent: u64) -> io::Result<()> {
+    // LLVM limits MSF files with 4096-byte blocks to UINT32_MAX bytes.
+    if extent > u64::from(u32::MAX) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "MSF file extent exceeds the supported 4096-byte block limit",
+        ));
+    }
+    Ok(())
+}
+
 magic_bytes! {
     #[derive(Debug)]
     pub(crate) MsfHeader(b"Microsoft C/C++ MSF 7.00\r\n\x1aDS\0\0\0");
@@ -207,18 +218,42 @@ impl<'a, S, const BLOCK_SIZE: u32> MsfStreamWriter<'a, S, BLOCK_SIZE> {
     where
         S: io::Write + io::Seek,
     {
-        let position = self.sink.stream_position()?;
-        let block_index = position as u32 / BLOCK_SIZE;
-        let cur_block = if block_index % BLOCK_SIZE == 1 {
-            // skip two FPM blocks
-            self.sink.write_all(FULL_BLOCK)?;
-            self.sink.write_all(FULL_BLOCK)?;
-            BlockIndex(block_index + 2)
-        } else {
-            BlockIndex(block_index)
-        };
-        self.blocks.push(cur_block);
-        Ok(())
+        // A failed or zero-length data write may already have acquired this block.
+        if self.blocks.len() > (self.position / BLOCK_SIZE) as usize {
+            return Ok(());
+        }
+        loop {
+            let position = self.sink.stream_position()?;
+            let block_size = u64::from(BLOCK_SIZE);
+            let block_index = u32::try_from(position / block_size).map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidInput, "MSF block index exceeds u32")
+            })?;
+            let offset = position % block_size;
+            let end = position.checked_add(block_size - offset).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "MSF file extent overflow")
+            })?;
+            if BLOCK_SIZE == DEFAULT_BLOCK_SIZE {
+                validate_file_extent(end)?;
+            }
+            if matches!(block_index % BLOCK_SIZE, 1 | 2) {
+                // Resume within either FPM block after a partially successful write.
+                let mut remaining = block_size - offset;
+                while remaining != 0 {
+                    let len = remaining.min(FULL_BLOCK.len() as u64) as usize;
+                    self.sink.write_all(&FULL_BLOCK[..len])?;
+                    remaining -= len as u64;
+                }
+                continue;
+            }
+            if offset != 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "MSF stream must start at a block boundary",
+                ));
+            }
+            self.blocks.push(BlockIndex(block_index));
+            return Ok(());
+        }
     }
 
     /// Finishes writing the stream, padding the final block to block boundaries, and returns the layout.
@@ -226,8 +261,12 @@ impl<'a, S, const BLOCK_SIZE: u32> MsfStreamWriter<'a, S, BLOCK_SIZE> {
     where
         S: io::Write + io::Seek,
     {
-        let rem = (BLOCK_SIZE - self.position % BLOCK_SIZE) % BLOCK_SIZE;
-        self.sink.write_all(&EMPTY_BLOCK[..rem as usize])?;
+        let mut rem = (BLOCK_SIZE - self.position % BLOCK_SIZE) % BLOCK_SIZE;
+        while rem != 0 {
+            let len = (rem as usize).min(EMPTY_BLOCK.len());
+            self.sink.write_all(&EMPTY_BLOCK[..len])?;
+            rem -= len as u32;
+        }
 
         Ok(MsfStreamLayout::new(self.blocks, self.position))
     }
@@ -244,9 +283,15 @@ where
         }
 
         let rem = BLOCK_SIZE - self.position % BLOCK_SIZE;
-        let len = rem.min(buf.len() as u32);
+        let len = (rem as usize).min(buf.len());
+        if len as u64 + u64::from(self.position) > u64::from(u32::MAX) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "MSF stream size exceeds u32",
+            ));
+        }
 
-        let read = self.sink.write(&buf[..len as usize])?;
+        let read = self.sink.write(&buf[..len])?;
         self.position += read as u32;
         Ok(read)
     }
@@ -350,7 +395,196 @@ mod tests {
 
     use super::{
         BlockIndex, DEFAULT_BLOCK_SIZE, DefaultMsfStreamWriter, MsfStream, MsfStreamLayout,
+        MsfStreamWriter,
     };
+
+    // Keep only the written suffix, even when physical positions are above 4 GiB.
+    struct VirtualSink {
+        base: u64,
+        inner: Cursor<Vec<u8>>,
+        fail_at: Option<u64>,
+        fail_kind: io::ErrorKind,
+        zero_at: Option<u64>,
+    }
+
+    impl VirtualSink {
+        fn new(base: u64) -> Self {
+            Self {
+                base,
+                inner: Cursor::new(Vec::new()),
+                fail_at: None,
+                fail_kind: io::ErrorKind::Interrupted,
+                zero_at: None,
+            }
+        }
+    }
+
+    impl Write for VirtualSink {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            let position = self.base + self.inner.position();
+            if self.fail_at == Some(position) {
+                self.fail_at = None;
+                return Err(io::Error::new(self.fail_kind, "injected write failure"));
+            }
+            if self.zero_at == Some(position) {
+                self.zero_at = None;
+                return Ok(0);
+            }
+            let len = self
+                .fail_at
+                .filter(|&at| at > position)
+                .map_or(buf.len(), |at| buf.len().min((at - position) as usize));
+            self.inner.write(&buf[..len])
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Read for VirtualSink {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.inner.read(buf)
+        }
+    }
+
+    impl Seek for VirtualSink {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            let local = match pos {
+                SeekFrom::Start(position) => SeekFrom::Start(
+                    position
+                        .checked_sub(self.base)
+                        .ok_or_else(|| io::Error::other("seek before virtual base"))?,
+                ),
+                other => other,
+            };
+            self.inner.seek(local).map(|position| self.base + position)
+        }
+    }
+
+    #[test]
+    fn interrupted_and_zero_writes_acquire_each_block_once() {
+        let bs = u64::from(DEFAULT_BLOCK_SIZE);
+        for start_block in [3, bs, bs + 1, bs + 2] {
+            for zero_next in [false, true] {
+                let base = start_block * bs;
+                let mut sink = VirtualSink::new(base);
+
+                // Interrupt the first data write, after any reserved FPM blocks.
+                let first_data = if start_block == bs + 1 || start_block == bs + 2 {
+                    (bs + 3) * bs
+                } else {
+                    base
+                };
+                sink.zero_at = zero_next.then_some(first_data);
+                sink.fail_at = (!zero_next).then_some(first_data);
+                let payload = patterned_bytes(bs as usize + 7);
+                let mut writer = DefaultMsfStreamWriter::new(&mut sink).unwrap();
+                if zero_next {
+                    assert_eq!(writer.write(&payload).unwrap(), 0);
+                    assert_eq!(writer.position(), 0);
+                }
+                writer.write_all(&payload).unwrap();
+                assert_eq!(writer.position() as usize, payload.len());
+                let layout = writer.finish().unwrap();
+                assert_eq!(layout.blocks.len(), 2);
+                assert_eq!(u64::from(layout.blocks[0].0) * bs, first_data);
+                let last = u64::from(layout.blocks[1].0);
+                assert_eq!(sink.stream_position().unwrap(), (last + 1) * bs);
+                let mut reader = MsfStream::new(sink, &layout, DEFAULT_BLOCK_SIZE);
+                let mut decoded = Vec::new();
+                reader.read_to_end(&mut decoded).unwrap();
+                assert_eq!(decoded, payload);
+                assert_eq!(reader.stream_position().unwrap(), payload.len() as u64);
+            }
+        }
+    }
+
+    #[test]
+    fn partial_fpm_write_can_be_retried() {
+        let bs = u64::from(DEFAULT_BLOCK_SIZE);
+        for offset in [0, 17, bs, bs + 23] {
+            let base = (bs + 1) * bs;
+            let mut sink = VirtualSink::new(base);
+            sink.fail_at = Some(base + offset);
+            sink.fail_kind = io::ErrorKind::Other;
+            let mut writer = DefaultMsfStreamWriter::new(&mut sink).unwrap();
+            assert_eq!(
+                writer.write(b"value").unwrap_err().kind(),
+                io::ErrorKind::Other
+            );
+            assert_eq!(writer.position(), 0);
+            assert!(writer.blocks.is_empty());
+            writer.write_all(b"value").unwrap();
+            let layout = writer.finish().unwrap();
+            assert_eq!(layout.blocks.len(), 1);
+            assert_eq!(u64::from(layout.blocks[0].0), bs + 3);
+            assert_eq!(sink.stream_position().unwrap(), (bs + 4) * bs);
+            assert!(
+                sink.inner.get_ref()[..2 * bs as usize]
+                    .iter()
+                    .all(|&b| b == 0xff)
+            );
+            let mut reader = MsfStream::new(sink, &layout, DEFAULT_BLOCK_SIZE);
+            let mut decoded = Vec::new();
+            reader.read_to_end(&mut decoded).unwrap();
+            assert_eq!(decoded, b"value");
+            assert_eq!(reader.stream_position().unwrap(), 5);
+        }
+    }
+
+    #[test]
+    fn physical_offsets_are_divided_before_narrowing() {
+        let base = 1u64 << 32;
+        let mut sink = VirtualSink::new(base);
+        let mut writer = MsfStreamWriter::<_, 8192>::new(&mut sink).unwrap();
+        writer.write_all(b"large offset").unwrap();
+        let layout = writer.finish().unwrap();
+        assert_eq!(layout.blocks[0].0, (base / 8192) as u32);
+        assert_eq!(sink.stream_position().unwrap(), base + 8192);
+        let mut reader = MsfStream::new(sink, &layout, 8192);
+        let mut decoded = Vec::new();
+        reader.read_to_end(&mut decoded).unwrap();
+        assert_eq!(decoded, b"large offset");
+        assert_eq!(reader.stream_position().unwrap(), 12);
+    }
+
+    #[test]
+    fn default_writer_enforces_supported_file_extent() {
+        let bs = u64::from(DEFAULT_BLOCK_SIZE);
+        let boundary = 1u64 << 32;
+        let mut sink = VirtualSink::new(boundary - 2 * bs);
+        let mut writer = DefaultMsfStreamWriter::new(&mut sink).unwrap();
+        writer.write_all(&vec![0x42; bs as usize]).unwrap();
+        assert_eq!(writer.position(), DEFAULT_BLOCK_SIZE);
+        assert_eq!(
+            writer.write(b"x").unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(writer.position(), DEFAULT_BLOCK_SIZE);
+        let layout = writer.finish().unwrap();
+        assert_eq!(layout.blocks.len(), 1);
+        assert_eq!(u64::from(layout.blocks[0].0), boundary / bs - 2);
+        assert_eq!(sink.stream_position().unwrap(), boundary - bs);
+        let mut reader = MsfStream::new(sink, &layout, DEFAULT_BLOCK_SIZE);
+        let mut decoded = Vec::new();
+        reader.read_to_end(&mut decoded).unwrap();
+        assert_eq!(decoded, vec![0x42; bs as usize]);
+        assert_eq!(reader.stream_position().unwrap(), bs);
+
+        for base in [boundary - bs, boundary, boundary + bs, u64::MAX - (bs - 1)] {
+            let mut sink = VirtualSink::new(base);
+            let mut writer = DefaultMsfStreamWriter::new(&mut sink).unwrap();
+            assert_eq!(
+                writer.write(b"x").unwrap_err().kind(),
+                io::ErrorKind::InvalidInput
+            );
+            assert_eq!(writer.position(), 0);
+            assert!(writer.blocks.is_empty());
+            assert_eq!(sink.stream_position().unwrap(), base);
+            assert!(sink.inner.get_ref().is_empty());
+        }
+    }
 
     struct LimitedReader {
         inner: Cursor<Vec<u8>>,

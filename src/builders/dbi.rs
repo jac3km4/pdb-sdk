@@ -7,6 +7,7 @@ use crate::dbi::*;
 use crate::msf::DefaultMsfStreamWriter;
 use crate::result::Result;
 use crate::strings::StringsBuilder;
+use crate::utils::align_to;
 use crate::{MsfStreamLayout, StreamIndex, codecs, constants};
 
 /// Builds DBI metadata and its module, symbol-index, and section-header streams.
@@ -29,7 +30,7 @@ pub struct DbiBuilder {
 impl DbiBuilder {
     /// Returns the public-symbol builder; finish it to add global records.
     ///
-    /// Add all publics before any globals so shared-stream offsets remain valid.
+    /// Publics and globals may be interleaved; returned offsets remain stable.
     pub fn symbols(&mut self) -> PublicsBuilder<'_> {
         PublicsBuilder {
             symbols: &mut self.symbols,
@@ -77,6 +78,8 @@ impl DbiBuilder {
             + self.modules.len() * u32::default_encoded_size(())
             + file_count * u32::default_encoded_size(());
         let file_names_size: usize = file_names.map(|s| s.len() + 1).sum();
+        let unpadded_file_info_size = file_info_size + file_names_size;
+        let file_info_size = align_to(unpadded_file_info_size, 4);
 
         let mut section_contribs = Vec::with_capacity(modules.len());
         for module in self.modules {
@@ -131,7 +134,7 @@ impl DbiBuilder {
                 + section_contribs.encoded_size(()) as u32,
             section_map_size: u16::default_encoded_size(()) as u32 * 2
                 + self.section_entries.encoded_size(()) as u32,
-            file_info_size: (file_info_size + file_names_size) as u32,
+            file_info_size: file_info_size as u32,
             type_server_size: 0,
             mfc_type_server_index: 0,
             optional_db_header_size: self.debug_streams.encoded_size(()) as u32,
@@ -179,9 +182,103 @@ impl DbiBuilder {
             stream.write_all(name.as_bytes())?;
             stream.write_all(b"\0")?;
         }
+        stream.write_all(&[0; 3][..file_info_size - unpadded_file_info_size])?;
         names.encode((), &mut stream)?;
         self.debug_streams.encode(((),), &mut stream)?;
 
         Ok(stream.finish()?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Cursor, Read, Seek, SeekFrom};
+
+    use declio::Decode;
+
+    use super::*;
+    use crate::msf::{DEFAULT_BLOCK_SIZE, MsfStream};
+
+    #[test]
+    fn file_info_size_and_bytes_are_four_byte_aligned() {
+        // Exercise all filename-buffer alignment residues and multiple modules.
+        for name_len in 0..4 {
+            let mut builder = DbiBuilder::default();
+            let mut expected_names = Vec::new();
+            for (i, files) in [
+                vec!["x".repeat(name_len)],
+                vec!["two.c".into(), "z.h".into()],
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let contrib = SectionContrib::decode((), &mut &[0; 28][..]).unwrap();
+                let mut module =
+                    ModuleBuilder::new(format!("module{i}"), format!("object{i}"), contrib);
+                for file in files {
+                    expected_names.extend_from_slice(file.as_bytes());
+                    expected_names.push(0);
+                    module.add_source_file(file);
+                }
+                builder.add_module(module);
+            }
+            builder.names.add("ec-marker").unwrap();
+            let mut sink = Cursor::new(Vec::new());
+            let layout = builder
+                .commit(&mut sink, &mut StreamAllocator::default())
+                .unwrap();
+            let mut stream = MsfStream::new(&mut sink, &layout, DEFAULT_BLOCK_SIZE);
+            let header = DbiHeader::decode((), &mut stream).unwrap();
+            let file_start = stream.stream_position().unwrap()
+                + u64::from(
+                    header.modi_stream_size
+                        + header.sec_contr_stream_size
+                        + header.section_map_size,
+                );
+            // Header, two u16 arrays per module, and three u32 offsets.
+            let raw_size = 4 + 2 * 4 + 3 * 4 + expected_names.len();
+            assert_eq!(header.file_info_size as usize, align_to(raw_size, 4));
+            stream.seek(SeekFrom::Start(file_start)).unwrap();
+            let files = FileInfo::decode((), &mut stream).unwrap();
+            assert_eq!(files.module_file_counts, [1, 2]);
+            assert_eq!(
+                files.file_name_offsets,
+                [0, (name_len + 1) as u32, (name_len + 7) as u32]
+            );
+            let mut names = vec![0; expected_names.len()];
+            stream.read_exact(&mut names).unwrap();
+            assert_eq!(names, expected_names);
+            let mut padding = vec![0xff; align_to(raw_size, 4) - raw_size];
+            stream.read_exact(&mut padding).unwrap();
+            assert!(padding.iter().all(|&b| b == 0));
+            assert_eq!(
+                stream.stream_position().unwrap(),
+                file_start + u64::from(header.file_info_size)
+            );
+            let ec = crate::strings::Strings::decode((), &mut stream).unwrap();
+            assert_eq!(ec.get(crate::StringOffset(1)), Some("ec-marker"));
+            assert_eq!(
+                stream.stream_position().unwrap(),
+                file_start + u64::from(header.file_info_size + header.ec_stream_size)
+            );
+            let debug: Vec<StreamIndex> =
+                Decode::decode(declio::ctx::Len(11), &mut stream).unwrap();
+            assert_eq!(
+                debug.iter().map(|index| index.0).collect::<Vec<_>>(),
+                vec![u16::MAX; 11]
+            );
+            assert_eq!(
+                stream.stream_position().unwrap(),
+                u64::from(layout.byte_size)
+            );
+            stream.rewind().unwrap();
+            let decoded = DbiStream::read(&mut stream).unwrap();
+            assert_eq!(decoded.modules().len(), 2);
+            assert_eq!(decoded.file_info().module_file_counts, [1, 2]);
+            assert_eq!(
+                decoded.ec_stream().get(crate::StringOffset(1)),
+                Some("ec-marker")
+            );
+        }
     }
 }
