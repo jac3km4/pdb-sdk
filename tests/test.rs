@@ -146,10 +146,13 @@ fn yaml2pdb(pdbutil: &str, yaml_path: &Path, pdb_path: &Path) -> Result<()> {
         .arg(yaml_path)
         .arg(format!("--pdb={}", pdb_path.display()))
         .status()
-        .context("Failed to execute tool")?;
+        .with_context(|| format!("Failed to execute {pdbutil} for {}", yaml_path.display()))?;
 
     if !status.success() {
-        bail!("Tool failed to generate pdb for {:?}", yaml_path);
+        bail!(
+            "{pdbutil} failed to generate PDB for {}: {status}",
+            yaml_path.display()
+        );
     }
 
     Ok(())

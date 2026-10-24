@@ -20,6 +20,7 @@ See [README.md](README.md#development) for development workflows and
 - `src/codeview/`: records; `src/codecs.rs`: encoding helpers.
 - `tests/test.rs`: round trips, real PDBs, LLVM fixtures.
 
+
 ## CI
 
 - Install Rust via `rustup toolchain install` with `--profile minimal

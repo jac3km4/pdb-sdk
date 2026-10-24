@@ -1,8 +1,7 @@
 # pdb-sdk
 
 A pure Rust library for reading and writing Microsoft PDB (Program Database)
-files, with per-stream access instead of loading the whole file into memory.
-Tested against LLVM; generated PDBs can be read by `llvm-pdbutil`.
+files, with per-stream access.
 
 **Alpha-quality. Requires Rust 1.93+.**
 
@@ -13,6 +12,10 @@ Tested against LLVM; generated PDBs can be read by `llvm-pdbutil`.
 
 ## Development
 
+Use [Conventional Commits](https://www.conventionalcommits.org/), e.g.
+`build: improve Cargo checks`. Keep descriptions concise and imperative; mark
+breaking changes with `!`.
+
 CI tests stable Rust on Linux and Windows, plus Rust 1.93.0 on Linux.
 
 ```sh
@@ -22,7 +25,8 @@ cargo +stable clippy --locked --all-targets --all-features -- -D warnings
 ```
 
 Doctests need a separate command. To check MSRV compatibility, rerun both test
-commands with `+1.93.0`.
+commands with `+1.93.0`. The declared MSRV remains Rust 1.93; contributor tools
+such as Clippy and rustfmt use the toolchains specified in CI.
 
 ### LLVM fixtures
 
