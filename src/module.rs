@@ -1,3 +1,8 @@
+//! Per-module symbols and CodeView C13 debug subsections.
+//!
+//! DBI supplies each module stream's index and region sizes. C11 line data and
+//! global references remain raw bytes; only some C13 payloads are decoded.
+
 use std::io::{self, Read, Write};
 
 use declio::ctx::{Endian, Len};
@@ -17,8 +22,11 @@ magic_bytes! {
     DebugSectionSignature(&0x4u32.to_le_bytes());
 }
 
-/// The Module Information Stream.
-/// Contains information about a single module (object file, import library, etc) that contributes to the binary. Includes line info and CodeView information for symbols.
+/// Debug information for one compiland, such as an object file or linker module.
+///
+/// Contains decoded symbol records and C13 subsection entries, plus raw C11 and
+/// global-reference bytes. C13 entries retain raw payloads until explicitly
+/// decoded; this is not an address-to-source lookup interface.
 #[derive(Debug, Getters)]
 pub struct Module {
     symbols: Vec<SymbolRecord>,
@@ -28,7 +36,7 @@ pub struct Module {
 }
 
 impl Module {
-    /// Creates a new Module.
+    /// Creates a module from symbols and C13 entries, with no C11 or global references.
     pub fn new(symbols: Vec<SymbolRecord>, debug_entries: Vec<DebugSubsectionEntry>) -> Self {
         Self {
             symbols,
@@ -114,7 +122,7 @@ impl Module {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct ModuleLayout {
-    /// Size of symbols.
+    /// Symbol-region byte size, including the 4-byte CodeView signature.
     sym_bytes: u32,
     /// Size of C11 line info.
     c11_bytes: u32,
@@ -122,18 +130,22 @@ pub struct ModuleLayout {
     c13_bytes: u32,
 }
 
-/// An entry in a Debug Subsection.
+/// A C13 subsection kind and its length-prefixed payload.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct DebugSubsectionEntry {
     /// Type of the debug subsection.
     pub record_type: DebugSubsectionRecordType,
+    /// Raw payload, excluding the subsection kind and length fields.
     #[declio(via = "Bytes<'_, u32>")]
     pub data: Vec<u8>,
 }
 
 impl DebugSubsectionEntry {
-    /// Decodes the Debug Subsection Entry into a DebugSubsectionRecord.
+    /// Interprets the payload according to its subsection kind.
+    ///
+    /// Lines and checksums have structured representations; inlinee lines expose
+    /// a signature and raw entries, and other supported kinds retain raw bytes.
     pub fn decoded(&self) -> Result<DebugSubsectionRecord> {
         let ctx = self.record_type;
         Ok(DebugSubsectionRecord::decode(ctx, &mut &self.data[..])?)
@@ -174,13 +186,13 @@ pub enum DebugSubsectionRecordType {
 
 impl_bitfield_specifier_codecs!(DebugSubsectionRecordType);
 
-/// A Debug Subsection Record.
+/// Decoded C13 payload, with raw bytes for kinds not structurally interpreted.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(
     ctx = "record_type: DebugSubsectionRecordType",
     id_expr = "record_type"
 )]
-/// A debug subsection record, such as line numbers, file checksums, etc.
+
 pub enum DebugSubsectionRecord {
     #[declio(id = "DebugSubsectionRecordType::Lines")]
     Lines {
@@ -241,11 +253,11 @@ pub struct LineFragmentHeader {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx = "flags: LineFlags, endian: Endian")]
 pub struct LineColumnEntry {
-    /// Index of the source file name in the string table.
+    /// Byte offset of the source file's entry in the file-checksums subsection.
     pub name_index: u32,
     /// Number of line entries.
     pub num_lines: u32,
-    /// Size of the code segment.
+    /// Serialized size of this file's line block, not a machine-code size.
     pub code_size: u32,
     /// Array of line number entries.
     #[declio(ctx = "Len(*num_lines as usize)")]
@@ -270,9 +282,9 @@ impl_bitfield_codecs!(LineFlags);
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct LineNumberEntry {
-    /// Offset of the instruction.
+    /// Instruction byte offset relative to the line fragment's code start.
     pub offset: u32,
-    /// Line number and statement flags.
+    /// Packed start line (bits 0..23), end-line delta (24..30), and statement bit (31).
     pub flags: u32,
 }
 
@@ -290,7 +302,7 @@ pub struct ColumnNumberEntry {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FileChecksumEntry {
-    /// Offset of the file name in the string table.
+    /// Byte offset of the file name in the associated CodeView string table.
     pub file_name_offset: u32,
     /// Size of the checksum.
     pub checksum_size: u8,

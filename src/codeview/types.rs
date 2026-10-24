@@ -1,3 +1,11 @@
+//! CodeView type records for TPI and ID records for IPI.
+//!
+//! Leaf records have an outer length prefix; embedded field-list members do
+//! not. The enums encode the kind and body, not the outer length or padding.
+//! PDB leaf records are four-byte aligned, unlike object-file `.debug$T` records.
+//! See LLVM's [type record reference](https://llvm.org/docs/PDB/CodeViewTypes.html)
+//! and [TPI/IPI documentation](https://llvm.org/docs/PDB/TpiStream.html).
+
 use std::fmt::Debug;
 
 use declio::ctx::Len;
@@ -13,7 +21,10 @@ use crate::{
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS", id_type = "LittleEndian<u16>")]
-/// CodeView Type Record, representing various types (e.g., pointers, modifiers, structs).
+/// Supported TPI leaf records and embedded field-list member records.
+///
+/// Member variants belong inside `FieldList`; this enum does not enforce that
+/// distinction when constructing or encoding records.
 pub enum TypeRecord {
     #[declio(id = "constants::LF_POINTER.into()")]
     /// Describes a pointer to another type.
@@ -87,7 +98,7 @@ pub enum TypeRecord {
         arg_list: Vec<u32>,
     },
     #[declio(id = "constants::LF_FIELDLIST.into()")]
-    /// A list of members in a class, struct, or union.
+    /// Embedded member records for an aggregate or enumeration.
     FieldList {
         /// List of member fields.
         #[declio(with = "codecs::padded_rem_list")]
@@ -136,7 +147,7 @@ pub enum TypeRecord {
         guid: Guid,
         /// Age of the type server.
         age: u32,
-        /// Name of the type server or symbol.
+        /// Type-server PDB name.
         name: StrBuf,
     },
     #[declio(id = "constants::LF_VFTABLE.into()")]
@@ -191,7 +202,7 @@ pub enum TypeRecord {
     StaticDataMember {
         /// Member attributes.
         properties: MemberProperties,
-        /// Type of the bitfield.
+        /// Type of the static data member.
         field_type: TypeIndex,
         /// Name of the static member.
         name: StrBuf,
@@ -214,7 +225,7 @@ pub enum TypeRecord {
         /// Type of the data member.
         #[declio(with = "codecs::optional_index")]
         field_type: Option<TypeIndex>,
-        /// Offset of the data member.
+        /// Byte offset within the containing object.
         offset: Integer,
         /// Name of the data member.
         name: StrBuf,
@@ -267,7 +278,10 @@ pub enum TypeRecord {
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS", id_type = "LittleEndian<u16>")]
-/// CodeView ID Record, representing items like function IDs, string IDs, etc.
+/// Supported IPI records: function identities, strings, and build/source metadata.
+///
+/// IPI indices are distinct from TPI indices even where fields in this API use
+/// the same `TypeIndex` wrapper.
 pub enum IdRecord {
     #[declio(id = "constants::LF_FUNC_ID.into()")]
     /// Identifies a function.
@@ -300,18 +314,18 @@ pub enum IdRecord {
         arguments: Vec<u32>,
     },
     #[declio(id = "constants::LF_SUBSTR_LIST.into()")]
-    /// A list of strings.
+    /// References to string records (`LF_SUBSTR_LIST`), not inline strings.
     StringList {
         /// Number of strings.
         count: u32,
-        /// List of string type indices.
+        /// IPI string-record indices, represented here as `TypeIndex`.
         #[declio(ctx = "(Len(*count as usize), constants::ENDIANESS)")]
         strings: Vec<TypeIndex>,
     },
     #[declio(id = "constants::LF_STRING_ID.into()")]
     /// An ID for a string.
     StringId {
-        /// ID for the string.
+        /// Optional IPI substring-list reference, represented as `TypeIndex`.
         #[declio(with = "codecs::optional_index")]
         id: Option<TypeIndex>,
         /// The string data.
@@ -343,7 +357,7 @@ pub enum IdRecord {
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// Record describing a struct, class, or interface.
+/// Body shared by `LF_STRUCTURE`, `LF_CLASS`, and `LF_INTERFACE`.
 pub struct StructRecord {
     /// Number of members.
     pub member_count: u16,
@@ -362,14 +376,14 @@ pub struct StructRecord {
     pub size: Integer,
     /// Name of the struct.
     pub name: StrBuf,
-    /// Unique name of the struct.
+    /// Unique name, encoded only when `properties.has_unique_name()` is set.
     #[declio(skip_if = "!properties.has_unique_name()")]
     pub unique_name: StrBuf,
 }
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// V2 struct/class/interface record.
+/// Body shared by the `LF_STRUCTURE2`, `LF_CLASS2`, and `LF_INTERFACE2` variants.
 pub struct StructRecord2 {
     /// Class properties (v2).
     pub properties: ClassPropertiesV2,
@@ -388,7 +402,7 @@ pub struct StructRecord2 {
     pub size: Integer,
     /// Name of the struct.
     pub name: StrBuf,
-    /// Unique name of the struct.
+    /// Unique name, encoded only when `properties.has_unique_name()` is set.
     #[declio(skip_if = "!properties.has_unique_name()")]
     pub unique_name: StrBuf,
 }
@@ -408,7 +422,7 @@ pub struct UnionRecord {
     pub size: Integer,
     /// Name of the union.
     pub name: StrBuf,
-    /// Unique name of the union.
+    /// Unique name, encoded only when `properties.has_unique_name()` is set.
     #[declio(skip_if = "!properties.has_unique_name()")]
     pub unique_name: StrBuf,
 }
@@ -429,7 +443,7 @@ pub struct EnumRecord {
     pub field_list: Option<TypeIndex>,
     /// Name of the enum.
     pub name: StrBuf,
-    /// Unique name of the enum.
+    /// Unique name, encoded only when `properties.has_unique_name()` is set.
     #[declio(skip_if = "!properties.has_unique_name()")]
     pub unique_name: StrBuf,
 }
@@ -458,7 +472,7 @@ pub struct VirtualBaseClasRecord {
     pub vbptr_type: TypeIndex,
     /// Offset of the virtual base pointer.
     pub vbptr_offset: Integer,
-    /// Index in the vtable.
+    /// Index in the virtual base table.
     pub vtable_index: Integer,
 }
 
@@ -473,7 +487,7 @@ pub struct MethodListEntry {
     /// Type index of the method.
     #[declio(with = "codecs::optional_index")]
     pub method_type: Option<TypeIndex>,
-    /// Optional offset in the vtable.
+    /// Vtable offset, encoded only for introducing virtual methods.
     #[declio(skip_if = "!properties.method_kind().is_introducing()")]
     pub vtable_offset: Option<u32>,
 }
@@ -553,7 +567,9 @@ mod vft_shape_tests {
 }
 
 #[derive(Debug)]
-/// Shape of a virtual function table (slots).
+/// `LF_VTSHAPE` body: a `u16` slot count and two four-bit slot kinds per byte.
+///
+/// The first slot occupies the high nibble; an unused final low nibble is ignored.
 pub struct VftShape {
     /// Kinds of vtable slots.
     pub slots: Vec<VFTableSlotKind>,
@@ -623,13 +639,13 @@ pub struct PointerProperties {
     pub is_unaligned: bool,
     /// Is restricted.
     pub is_restrict: bool,
-    /// Size of the pointer.
+    /// Size of the pointer in bytes.
     pub size: B6,
-    /// Is MOCOM.
+    /// Marks a WinRT smart pointer.
     pub is_mocom: bool,
-    /// Is an L-value reference.
+    /// Marks a `this` pointer for an lvalue-ref-qualified member function.
     pub is_lref: bool,
-    /// Is an R-value reference.
+    /// Marks a `this` pointer for an rvalue-ref-qualified member function.
     pub is_rref: bool,
     #[skip]
     unused: B10,
@@ -639,7 +655,7 @@ impl_bitfield_codecs!(PointerProperties);
 
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 5]
-/// Underlying kind of a pointer (e.g., Near32, Far64).
+/// CodeView pointer representation (for example, `Near32` or `Near64`).
 pub enum PointerKind {
     /// 16 bit pointer.
     Near16 = 0x00,
@@ -688,7 +704,7 @@ pub enum PointerMode {
 }
 
 impl PointerMode {
-    /// Checks if this modifier indicates a member pointer.
+    /// Whether this mode denotes a data-member or member-function pointer.
     pub fn is_member_pointer(self) -> bool {
         matches!(self, PointerMode::DataMember | PointerMode::MemberFunction)
     }
@@ -956,7 +972,7 @@ pub enum MethodKind {
 }
 
 impl MethodKind {
-    /// Checks if this virtual function table shape indicates an introducing virtual function.
+    /// Whether this method kind carries an introducing-virtual vtable offset.
     pub fn is_introducing(self) -> bool {
         matches!(
             self,
@@ -969,7 +985,10 @@ impl_bitfield_specifier_codecs!(MethodKind);
 
 #[derive(Debug, Clone, Copy, Specifier)]
 #[bits = 32]
-/// Built-in types (e.g., Void, I32, F64).
+/// Supported direct simple-type indices, which need no TPI record.
+///
+/// This enum does not include the pointer modes encoded in other simple-type
+/// indices; converting those indices to `BuiltinType` returns an error.
 pub enum BuiltinType {
     /// Void type.
     Void = 0x0003,
@@ -1080,7 +1099,7 @@ impl From<BuiltinType> for TypeIndex {
 }
 
 #[derive(Debug)]
-/// Error type for when a TypeIndex is not a builtin type.
+/// The index is not one of the direct simple types represented by `BuiltinType`.
 pub struct NonBuiltinType;
 
 impl TryFrom<TypeIndex> for BuiltinType {

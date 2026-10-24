@@ -1,3 +1,9 @@
+//! Serialized PDB hash-table components and the V1 name hash.
+//!
+//! This table format is used by named streams and type hash adjusters; symbol
+//! GSI indexes have a different layout. See LLVM's
+//! [serialized hash-table guide](https://llvm.org/docs/PDB/HashTable.html).
+
 use std::fmt;
 
 use declio::ctx::Len;
@@ -5,6 +11,7 @@ use declio::{Decode, Encode};
 
 use crate::constants;
 
+/// Serialized bucket state and packed 32-bit key/value entries.
 #[derive(Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub(crate) struct Table {
@@ -54,7 +61,7 @@ impl Default for Table {
     }
 }
 
-/// A key-value pair in a PDB Serialized Hash Table. The key is always a uint32.
+/// A 32-bit key/value pair in this implementation's serialized PDB hash table.
 #[derive(Debug, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct KeyVal {
@@ -81,7 +88,7 @@ pub struct BitVector {
 }
 
 impl BitVector {
-    /// Creates a new filled bit vector.
+    /// Sets the first `n` bits, with zero padding to a 32-bit word boundary.
     pub fn new_filled(n: u32) -> Self {
         let words = n.div_ceil(32);
         let bytes = words * 4;
@@ -95,14 +102,17 @@ impl BitVector {
         this
     }
 
-    /// Gets the bit at the specified index.
+    /// Returns a bit, or `None` beyond the allocated word storage.
     #[allow(unused)]
     pub fn get(&self, n: usize) -> Option<bool> {
         let elem = self.buf.get(n / 8)?;
         Some(*elem & (1 << (n % 8)) != 0)
     }
 
-    /// Sets the bit at the specified index.
+    /// Sets a bit within the allocated word storage.
+    ///
+    /// # Panics
+    /// Panics if `n` is outside that storage.
     pub fn set(&mut self, n: usize) {
         let elem = self.buf.get_mut(n / 8).unwrap();
         *elem |= 1 << (n % 8);
@@ -115,6 +125,7 @@ impl BitVector {
     }
 }
 
+/// Computes the PDB V1 byte hash; this is not a cryptographic hash.
 pub(crate) fn hash_v1(bytes: &[u8]) -> u32 {
     let mut hash = 0;
     let mut slice = bytes;

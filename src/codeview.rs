@@ -1,3 +1,12 @@
+//! CodeView type, ID, and symbol records used within PDB streams.
+//!
+//! Leaf type/ID records and symbol records begin with a little-endian `u16`
+//! length (excluding itself) and a `u16` kind. Stream readers handle the length
+//! prefix separately from the kind and body.
+//! See LLVM's [PDB overview](https://llvm.org/docs/PDB/index.html),
+//! [type records](https://llvm.org/docs/PDB/CodeViewTypes.html), and
+//! [symbol records](https://llvm.org/docs/PDB/CodeViewSymbols.html).
+
 use std::cmp::Ordering;
 use std::io;
 
@@ -95,6 +104,7 @@ mod tests {
     }
 }
 
+/// Length-prefixed record; encoding aligns the prefix and body to four bytes.
 #[derive(Debug)]
 pub(crate) struct PrefixedRecord<A>(pub A);
 
@@ -127,10 +137,8 @@ impl<A> PrefixedRecord<A> {
         Ok((Self(res), (len + 2) as u64))
     }
 
-    /// Like [`Self::decode_with_size`], but returns `Ok(None)` at clean EOF or when the next
-    /// record's length prefix is `< 2` (no room for the kind tag). Some
-    /// PDBs pad the tail of the global symbol stream with `00 00` to align
-    /// the stream byte size.
+    /// Like [`Self::decode_with_size`], but accepts clean EOF or a length below
+    /// two as a terminator. A partial length prefix or truncated body is an error.
     pub fn decode_or_terminator<R>(reader: &mut R) -> Result<Option<Self>, declio::Error>
     where
         A: Decode,
@@ -192,9 +200,13 @@ where
 
 #[derive(Debug, PartialEq, Eq, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// Represents an offset into a data region, accompanied by its segment index.
+/// Section-relative address, not a PDB stream offset or an RVA.
+///
+/// Ordering compares the segment first, then the byte offset.
 pub struct DataRegionOffset {
+    /// Byte offset within the segment.
     pub offset: u32,
+    /// CodeView segment (section) index.
     pub segment: u16,
 }
 
@@ -222,7 +234,7 @@ impl Ord for DataRegionOffset {
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// Represents a hardware register index.
+/// CodeView register number, interpreted for the symbol's target architecture.
 pub struct Register(pub u16);
 
 pub(crate) trait NamedSymbol {

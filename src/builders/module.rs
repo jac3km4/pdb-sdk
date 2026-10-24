@@ -12,11 +12,17 @@ use crate::msf::DefaultMsfStreamWriter;
 use crate::result::Result;
 use crate::utils::{StrBuf, align_to};
 
+/// Builds one module's DBI entry, symbols, and C13 debug subsections.
+///
+/// Source-file names are DBI metadata; line tables and checksum subsections must
+/// be supplied separately. Symbol scope links and type references are not fixed up.
 #[derive(Debug)]
 pub struct ModuleBuilder {
     name: String,
     obj_file_name: String,
     pub(super) section_contrib: SectionContrib,
+    /// Symbols in emission order. Direct edits do not update offset bookkeeping;
+    /// changing encoded sizes invalidates offsets returned by [`Self::add_symbol`].
     pub symbols: Vec<SymbolRecord>,
     debug_entries: Vec<DebugSubsectionEntry>,
     pub(super) source_files: Vec<String>,
@@ -24,6 +30,9 @@ pub struct ModuleBuilder {
 }
 
 impl ModuleBuilder {
+    /// Creates a module with DBI display/object-file names and one contribution.
+    ///
+    /// The contribution's section and module references are used as supplied.
     pub fn new(name: String, obj_file_name: String, section_contrib: SectionContrib) -> Self {
         Self {
             name,
@@ -36,6 +45,9 @@ impl ModuleBuilder {
         }
     }
 
+    /// Appends a symbol and returns its length-prefix offset in the module stream.
+    ///
+    /// The first offset is 4, after the signature; records are aligned to 4 bytes.
     pub fn add_symbol(&mut self, symbol: SymbolRecord) -> SymbolOffset {
         let offset = SymbolOffset(self.offset);
         let size = u16::default_encoded_size(()) + symbol.encoded_size(());
@@ -44,11 +56,15 @@ impl ModuleBuilder {
         offset
     }
 
+    /// Appends a C13 subsection without validating its payload or cross-references.
     pub fn add_debug_entry(&mut self, entry: DebugSubsectionEntry) -> &mut Self {
         self.debug_entries.push(entry);
         self
     }
 
+    /// Appends a filename to DBI file info; does not read the file or add line data.
+    ///
+    /// Names are not deduplicated. The per-module file count must fit in `u16`.
     pub fn add_source_file(&mut self, file: String) -> &mut Self {
         self.source_files.push(file);
         self

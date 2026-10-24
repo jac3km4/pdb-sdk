@@ -1,3 +1,13 @@
+//! Builders for supported PDB streams and an MSF 7.0 container.
+//!
+//! Records and cross-references are supplied by the caller; these builders are
+//! not a lossless editor for existing PDBs. See the
+//! [LLVM PDB guide](https://llvm.org/docs/PDB/index.html) for the stream layout.
+//!
+//! Callers must keep stream counts within `u16` indices and stream sizes/offsets
+//! within `u32`; not all narrowing conversions are checked. Padded CodeView
+//! record bodies must fit a `u16` length prefix.
+
 use std::io;
 
 use declio::Encode;
@@ -18,6 +28,9 @@ pub use self::module::ModuleBuilder;
 pub use self::symbols::{PublicsBuilder, SymbolsBuilder};
 pub use self::types::{IpiBuilder, TpiBuilder, TypeStreamBuilder};
 
+/// Assembles PDB Info, DBI, TPI, IPI, and their auxiliary streams in memory.
+///
+/// Use [`Self::commit`] to consume the builder and write a new PDB.
 #[derive(Debug, Default)]
 pub struct PdbBuilder {
     info: InfoBuilder,
@@ -27,24 +40,30 @@ pub struct PdbBuilder {
 }
 
 impl PdbBuilder {
+    /// Returns the PDB identity builder.
     pub fn info(&mut self) -> &mut InfoBuilder {
         &mut self.info
     }
 
+    /// Returns the module, symbol, and section metadata builder.
     pub fn dbi(&mut self) -> &mut DbiBuilder {
         &mut self.dbi
     }
 
+    /// Returns the TPI type-record builder.
     pub fn tpi(&mut self) -> &mut TpiBuilder {
         &mut self.tpi
     }
 
+    /// Returns the IPI ID-record builder, with indices independent of TPI.
     pub fn ipi(&mut self) -> &mut IpiBuilder {
         &mut self.ipi
     }
 
-    /// Writes the PDB to a seekable sink, which must begin at position zero.
+    /// Consumes the builder and writes an MSF 7.0 PDB with 4096-byte blocks.
     ///
+    /// The sink must begin at position zero; it is not truncated. The Info age is
+    /// copied to DBI. Record references and section metadata are not repaired.
     /// An error may leave partial writes in the sink; writes are not rolled back.
     /// On success, the final position is immediately after the rewritten superblock,
     /// not at the end of the file.

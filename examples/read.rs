@@ -1,3 +1,5 @@
+//! Inspect selected streams in the historical `tests/llvm.pdb` fixture.
+
 use std::fs::File;
 
 use pdb_sdk::PdbFile;
@@ -20,7 +22,7 @@ fn main() -> Result<()> {
     dbg!(tpi.records().first());
 
     let hash = reader.get_tpi_hash(&tpi)?;
-    // look up a record by hashed name
+    // Inspect a hash candidate; the hash lookup does not verify the record's name.
     if let Some(index) = hash.get_index("core::fmt::rt::v1::FormatSpec") {
         dbg!(tpi.record(index));
     } else {

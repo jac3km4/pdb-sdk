@@ -1,3 +1,8 @@
+//! DBI module, source-file, section, and auxiliary debug-stream metadata.
+//!
+//! See LLVM's [DBI guide](https://llvm.org/docs/PDB/DbiStream.html) for the
+//! substream layout and optional debug-stream slots.
+
 use std::io::{self, Read};
 
 use declio::ctx::Len;
@@ -21,8 +26,11 @@ magic_bytes! {
     pub DbiSignature(&(-1i32).to_le_bytes());
 }
 
-/// The Debug Info (DBI) Stream.
-/// Contains information about how the program was compiled, the compilands (modules) used to link the program, source files used, and references to other streams with more detailed information.
+/// DBI (stream 3): build metadata, modules, section contributions, and source files.
+///
+/// References identify module streams, global/public indexes, shared symbol
+/// records, and optional debug streams. Reading DBI does not read those streams.
+/// Type-server data is retained as bytes rather than resolved.
 #[derive(Debug, Getters)]
 pub struct DbiStream {
     header: DbiHeader,
@@ -37,7 +45,7 @@ pub struct DbiStream {
 }
 
 impl DbiStream {
-    /// Reads the DBI Stream from a reader.
+    /// Decodes a DBI stream with version V70 or V110.
     pub fn read<R: io::Read>(mut reader: R) -> Result<Self> {
         let header = DbiHeader::decode((), &mut reader)?;
         if !matches!(header.version, DbiVersion::V70 | DbiVersion::V110) {
@@ -130,15 +138,16 @@ pub struct DbiHeader {
     pub version: DbiVersion,
     /// The number of times the PDB has been written.
     pub age: u32,
-    /// The index of the Global Symbol Stream.
+    /// Index of the global-symbol hash index, not the symbol record stream.
     pub global_symbol_stream_index: StreamIndex,
     /// A bitfield containing the major and minor version number of the toolchain.
     pub build_number: BuildNumber,
-    /// The index of the Public Symbol Stream.
+    /// Index of the public-symbol hash index and address/thunk maps.
     pub public_symbol_stream_index: StreamIndex,
     /// The version number of mspdbXXXX.dll used to produce this PDB.
     pub dll_version: u16,
-    /// The stream containing all CodeView symbol records used by the program.
+    /// Shared symbol record stream referenced by global/public indexes.
+    /// Module-local symbol records are stored in separate module streams.
     pub sym_record_stream_index: StreamIndex,
     /// Unknown rebuild data.
     pub rbld: u16,
@@ -154,7 +163,7 @@ pub struct DbiHeader {
     pub type_server_size: u32,
     /// The index of the MFC type server in the Type Server Map Substream.
     pub mfc_type_server_index: u32,
-    /// The length of the Optional Debug Header Stream.
+    /// Byte length of the optional debug-header substream (an array of stream indices).
     pub optional_db_header_size: u32,
     /// The length of the EC Substream.
     pub ec_stream_size: u32,
@@ -245,9 +254,9 @@ pub struct ModuleInfoHeader {
     pub flags: ModuleInfoFlags,
     /// Type Server Index for this module.
     pub type_server_index: u8,
-    /// The index of the stream that contains symbol information for this module.
+    /// Module symbol/line stream index, or `0xffff` if no debug stream is present.
     pub debug_info_stream: StreamIndex,
-    /// Sizes of the symbol and line info streams.
+    /// Byte sizes of the symbol, C11, and C13 regions within the module stream.
     pub layout: ModuleLayout,
     /// The number of source files that contributed to this module during compilation.
     pub num_files: u16,
@@ -329,13 +338,17 @@ pub struct SectionMapEntry {
     pub sec_byte_length: u32,
 }
 
-/// The File Info Substream. Defines the mapping from module to the source files that contribute to that module.
+/// Source-file contributions grouped by module.
+///
+/// Filename offsets refer to [`DbiStream::file_names`], not the `/names` stream.
+/// This decoder sizes the offset array from the 16-bit `num_source_files` field;
+/// it does not handle larger lists whose true count is the sum of module counts.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FileInfo {
     /// The number of modules for which source file information is contained.
     pub num_modules: u16,
-    /// The number of source files, capped at 64K.
+    /// Legacy 16-bit source-file count; may not reflect the full contribution count.
     pub num_source_files: u16,
     /// Array of module indices.
     #[declio(ctx = "(Len(*num_modules as usize), constants::ENDIANESS)")]
@@ -343,7 +356,7 @@ pub struct FileInfo {
     /// Array of integers, containing the number of source files contributing to each module.
     #[declio(ctx = "(Len(*num_modules as usize), constants::ENDIANESS)")]
     pub module_file_counts: Vec<u16>,
-    /// Offsets into the string table pointing to null terminated strings.
+    /// Byte offsets into the DBI filename buffer, pointing to NUL-terminated names.
     #[declio(ctx = "(Len(*num_source_files as usize), constants::ENDIANESS)")]
     pub file_name_offsets: Vec<u32>,
 }
@@ -376,7 +389,7 @@ pub struct SectionHeader {
     pub name: [u8; 8],
     /// Virtual size.
     pub virtual_size: u32,
-    /// Virtual address.
+    /// Relative virtual address (RVA) of the section in the image.
     pub virtual_address: u32,
     /// Size of raw data.
     pub size_of_raw_data: u32,
@@ -415,13 +428,13 @@ impl SectionHeaderStream {
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FpoData {
-    /// Offset of the function.
+    /// Function start RVA.
     pub offset: u32,
     /// Size of the function.
     pub size: u32,
-    /// Number of locals.
+    /// Local stack storage size in 4-byte units, not a variable count.
     pub num_locals: u32,
-    /// Number of parameters.
+    /// Parameter stack storage size in 4-byte units, not a parameter count.
     pub num_params: u16,
     /// Attributes of the function.
     pub attributes: u16,
@@ -458,7 +471,7 @@ pub struct FrameData {
     pub params_size: u32,
     /// Max stack size.
     pub max_stack_size: u32,
-    /// Frame function string.
+    /// Offset of the frame-program string in the PDB `/names` table.
     pub frame_func: u32,
     /// Prolog size.
     pub prolog_size: u16,

@@ -1,3 +1,9 @@
+//! MSF 7.0 block layout and logical stream I/O.
+//!
+//! Stream bytes may cross noncontiguous blocks; positions are logical byte
+//! offsets, independent of physical file offsets and final-block padding.
+//! See LLVM's [MSF guide](https://llvm.org/docs/PDB/MsfFile.html).
+
 use std::fmt;
 use std::io::{self, Read};
 
@@ -58,7 +64,7 @@ impl SuperBlock {
         Ok(())
     }
 
-    /// Gets the number of blocks comprising the block map.
+    /// Returns the number of directory blocks listed in the block-map block.
     pub fn block_map_blocks(&self) -> u32 {
         self.num_dir_bytes.div_ceil(self.block_size)
     }
@@ -77,6 +83,7 @@ impl MsfStreamLayout {
     }
 }
 
+/// A logical view bounded by the directory's stream size, excluding block padding.
 #[derive(Debug)]
 pub(crate) struct MsfStream<'a, R> {
     layout: &'a MsfStreamLayout,
@@ -319,7 +326,10 @@ impl BlockIndex {
 
 #[derive(Clone, Copy, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// Represents the index of a stream within the MSF file.
+/// A 16-bit MSF stream reference used by PDB records.
+///
+/// `0xffff` denotes an absent stream in fields that permit it. This is a stream
+/// number, not a block number or a byte offset.
 pub struct StreamIndex(pub(crate) u16);
 
 impl fmt::Debug for StreamIndex {

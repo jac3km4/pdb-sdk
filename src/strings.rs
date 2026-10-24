@@ -1,3 +1,5 @@
+//! PDB string-table serialization and byte-offset access.
+
 use std::fmt;
 use std::io::Write;
 
@@ -14,8 +16,11 @@ magic_bytes! {
     StringsSignature(&0xEFFE_EFFE_u32.to_le_bytes());
 }
 
-/// Represents the PDB String Table (or `/names` stream).
-/// It contains a deduplicated table of strings mapped to their offsets.
+/// A PDB string table, notably the named `/names` stream.
+///
+/// Strings are NUL-terminated bytes referenced by byte offset, not ordinal index.
+/// The serialized table also contains hash metadata; access here uses offsets
+/// directly. DBI filenames and module C13 string tables are separate buffers.
 #[derive(Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct Strings {
@@ -29,7 +34,10 @@ pub struct Strings {
 }
 
 impl Strings {
-    /// Gets a string from the string table given an offset.
+    /// Reads a NUL-terminated UTF-8 string starting at `offset`.
+    ///
+    /// Returns `None` for an out-of-range offset, missing terminator, or invalid
+    /// UTF-8. The offset need not be a known string boundary.
     pub fn get(&self, offset: StringOffset) -> Option<&str> {
         let bytes = self.bytes.get(offset.0 as usize..)?;
         let end = bytes.iter().position(|&byte| byte == 0)?;

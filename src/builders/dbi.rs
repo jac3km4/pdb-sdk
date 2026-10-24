@@ -9,6 +9,12 @@ use crate::result::Result;
 use crate::strings::StringsBuilder;
 use crate::{MsfStreamLayout, StreamIndex, codecs, constants};
 
+/// Builds DBI metadata and its module, symbol-index, and section-header streams.
+///
+/// The DBI header uses the AMD64 machine type. Section maps, contributions, and
+/// symbol addresses are caller-supplied and are not reconciled automatically.
+/// Module, section-map, and file counts must fit the DBI `u16` fields; these
+/// limits are not checked before writing.
 #[derive(Debug, Default)]
 pub struct DbiBuilder {
     pub(super) age: u32,
@@ -21,22 +27,32 @@ pub struct DbiBuilder {
 }
 
 impl DbiBuilder {
+    /// Returns the public-symbol builder; finish it to add global records.
+    ///
+    /// Add all publics before any globals so shared-stream offsets remain valid.
     pub fn symbols(&mut self) -> PublicsBuilder<'_> {
         PublicsBuilder {
             symbols: &mut self.symbols,
         }
     }
 
+    /// Appends a module in DBI order; its MSF stream index is assigned at commit.
+    ///
+    /// Module references in symbol records must be supplied by the caller.
     pub fn add_module(&mut self, module: ModuleBuilder) -> &mut Self {
         self.modules.push(module);
         self
     }
 
+    /// Appends a logical section-map entry without creating a section header.
     pub fn add_section_entry(&mut self, section: SectionMapEntry) -> &mut Self {
         self.section_entries.push(section);
         self
     }
 
+    /// Appends a PE/COFF section header in section-number order.
+    ///
+    /// A separate section-header stream is emitted only when headers are present.
     pub fn add_section_header(&mut self, section: SectionHeader) -> &mut Self {
         self.section_headers.push(section);
         self

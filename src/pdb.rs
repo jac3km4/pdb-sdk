@@ -1,3 +1,7 @@
+//! Per-stream access to a PDB in an MSF 7.0 container.
+//!
+//! See LLVM's [PDB format guide](https://llvm.org/docs/PDB/index.html) for stream roles.
+
 use std::io;
 
 use declio::Decode;
@@ -12,8 +16,10 @@ use crate::symbols::Symbols;
 use crate::types::{IpiStream, TpiStream, TypeHash, TypeStream};
 use crate::{Publics, StreamIndex, Strings, SymbolMap, constants};
 
-/// An MSF (Multi-Stream Format) container file representing a PDB file.
-/// It contains multiple streams which can represent arbitrary data, such as the PDB Info Stream, TPI/IPI Streams, DBI Stream, etc.
+/// A PDB reader backed by a seekable MSF 7.0 container.
+///
+/// Opening reads the stream directory, not every stream. Getters decode the
+/// requested stream into owned data; supplied metadata must come from this PDB.
 #[derive(Debug)]
 pub struct PdbFile<R> {
     inner: R,
@@ -25,7 +31,10 @@ impl<R> PdbFile<R>
 where
     R: io::Read + io::Seek,
 {
-    /// Opens a PDB file from a reader and parses its MSF directory layout.
+    /// Parses the MSF 7.0 header and stream directory.
+    ///
+    /// The reader must be positioned at the start of the file. Stream offsets are
+    /// absolute; embedding a PDB at a nonzero reader offset is not supported.
     pub fn open(mut reader: R) -> Result<Self> {
         let start = reader.stream_position()?;
         let file_len = reader.seek(io::SeekFrom::End(0))?;
@@ -138,7 +147,10 @@ where
         DbiStream::read(stream)
     }
 
-    /// Reads the Type Info (TPI) Stream, containing CodeView type records.
+    /// Reads TPI records describing types such as classes, pointers, and procedures.
+    ///
+    /// Only V80 streams with a 56-byte header and supported record kinds are
+    /// decoded. Built-in simple types have indices rather than stored records.
     pub fn get_tpi(&mut self) -> Result<TpiStream> {
         let stream = self
             .get_stream(BuiltinStream::Tpi)
@@ -146,7 +158,10 @@ where
         TypeStream::read(stream)
     }
 
-    /// Reads the TPI hash stream for accelerated type lookups.
+    /// Reads the hash stream referenced by a TPI or IPI header.
+    ///
+    /// This returns hash metadata, not a collision-resolving name lookup index.
+    /// See [`TypeHash::get_index`] for its candidate-lookup limitations.
     pub fn get_tpi_hash<A>(&mut self, tpi: &TypeStream<A>) -> Result<TypeHash> {
         let hash_stream = self
             .get_indexed_stream(tpi.header().hash_stream_index)
@@ -158,7 +173,10 @@ where
         )
     }
 
-    /// Reads the ID Info (IPI) Stream, containing CodeView ID records.
+    /// Reads IPI records for function IDs, strings, build info, and source references.
+    ///
+    /// IPI uses the TPI layout but a separate index space and record set. It may
+    /// be absent, including in older PDBs.
     pub fn get_ipi(&mut self) -> Result<IpiStream> {
         let stream = self
             .get_stream(BuiltinStream::Ipi)
@@ -166,7 +184,10 @@ where
         TypeStream::read(stream)
     }
 
-    /// Reads the Public Symbol Stream, containing public (exported) symbol records.
+    /// Reads the public-symbol hash index and address/thunk maps.
+    ///
+    /// Entries refer into the separate stream returned by [`Self::get_symbols`].
+    /// PDB public symbols are not the PE export table.
     pub fn get_publics(&mut self, dbi: &DbiStream) -> Result<Publics> {
         let stream = self
             .get_indexed_stream(dbi.header().public_symbol_stream_index)
@@ -174,7 +195,10 @@ where
         Publics::read_with_header(stream)
     }
 
-    /// Reads the Global Symbol Stream, containing a single combined symbol table.
+    /// Reads the global-symbol hash index, not the symbol records themselves.
+    ///
+    /// The index refers into the stream returned by [`Self::get_symbols`].
+    /// [`SymbolMap`] currently exposes serialization, not name lookup.
     pub fn get_globals(&mut self, dbi: &DbiStream) -> Result<SymbolMap> {
         let stream = self
             .get_indexed_stream(dbi.header().global_symbol_stream_index)
@@ -182,7 +206,10 @@ where
         SymbolMap::read_with_header(stream)
     }
 
-    /// Reads the main symbol record stream referenced by the DBI stream.
+    /// Reads the shared symbol records referenced by the global/public indexes.
+    ///
+    /// Module-local records are read separately by [`Self::get_module`]. The
+    /// returned collection is in record order, not indexed by byte offset.
     pub fn get_symbols(&mut self, dbi: &DbiStream) -> Result<Symbols> {
         let stream = self
             .get_indexed_stream(dbi.header().sym_record_stream_index)

@@ -1,3 +1,8 @@
+//! Write a demonstration PDB beside a PE executable, overwriting that path.
+//!
+//! The GUID, age, and section headers come from the executable. Symbols and
+//! addresses are illustrative, not recovered debug information.
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -70,15 +75,8 @@ fn main() -> Result<()> {
 
     let fn_type = {
         let tpi = builder.tpi();
-        // 0x1005 | LF_MODIFIER [size = 12]
-        //          referent = 0x0071 (wchar_t), modifiers = const
-        // 0x1007 | LF_POINTER [size = 12]
-        //          referent = 0x1005, mode = pointer, opts = None, kind = ptr64
-        // 0x15E2 | LF_ARGLIST [size = 12]
-        //          0x1007: `const wchar_t*`
-        // 0xABE1 | LF_PROCEDURE [size = 16]
-        //          return type = 0x0074 (int), # args = 1, param list = 0x15E2
-        //          calling conv = cdecl, options = None
+        // Build an illustrative int function(const wchar_t*) type. The builder
+        // assigns indices; these need not match any types in the executable.
 
         let referent = tpi.add(
             "idk",

@@ -1,3 +1,5 @@
+//! GSI hash-index serialization shared by the global and public symbol streams.
+
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::io;
@@ -24,10 +26,14 @@ magic_bytes! {
     HdrVersion(&HDR_VERSION.to_le_bytes());
 }
 
+/// The global-symbol index, represented by the shared GSI hash-table format.
 pub type Globals = SymbolMap;
 
-/// Represents the Global Symbol Information (GSI) Hash Table.
-/// This structure is used within both the Globals Stream and the Publics Stream.
+/// A Global Symbol Information (GSI) hash index.
+///
+/// Used by both global and public streams to refer to records in a separate
+/// symbol record stream. This type reads and writes index data; it does not
+/// currently expose name lookup or resolve symbol records.
 #[derive(Debug, EncodedSize)]
 pub struct SymbolMap {
     hash_records: Vec<IndexRecord>,
@@ -86,7 +92,7 @@ impl SymbolMap {
         }
     }
 
-    /// Reads the symbol map from the provided input stream.
+    /// Reads a GSI header followed by hash records, bitmap, and bucket offsets.
     pub fn read_with_header<R>(mut input: R) -> Result<Self>
     where
         R: io::Read,
@@ -114,7 +120,7 @@ impl SymbolMap {
         })
     }
 
-    /// Writes the symbol map to the provided output stream.
+    /// Writes the GSI header and index data, without the referenced symbol records.
     pub fn write_with_header<S>(&self, sink: &mut S) -> Result<()>
     where
         S: io::Write,

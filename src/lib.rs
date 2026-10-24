@@ -1,10 +1,28 @@
-//! Read and write Microsoft PDB (Program Database) files with per-stream access.
+//! Read and write native Microsoft PDB files with per-stream access.
 //!
-//! [`PdbFile`] reads the MSF directory when opened, then decodes only the streams
-//! requested by its getters through a shared `Read + Seek` reader. It does not
-//! load the entire file up front. Directory metadata, requested streams, and
-//! decoded record collections can still allocate memory; this is not a
-//! constant-memory parser.
+//! [`PdbFile`] reads the MSF 7.0 directory at open and decodes requested streams
+//! through a shared `Read + Seek` reader. Directory metadata and decoded records
+//! allocate memory; opening does not load the whole file.
+//!
+//! # Format and API map
+//!
+//! MSF supplies the block-based container; CodeView supplies type, ID, and symbol
+//! records. Numeric fields are little-endian unless specified otherwise.
+//!
+//! - [`info`]: PDB identity, features, and named-stream locations.
+//! - [`types`]: TPI type records, IPI ID records, and hash candidates.
+//! - [`dbi`]: module/section metadata and references to other debug streams.
+//! - [`module`]: per-module symbols and C13 subsections.
+//! - [`symbols`]: shared symbol records; [`Publics`] and [`SymbolMap`] index them.
+//! - [`codeview`]: supported binary records; [`builders`]: stream construction.
+//!
+//! Stream indices, type/ID indices, string/symbol byte offsets, and section-relative
+//! addresses use different coordinate systems. Public symbols are not necessarily
+//! PE exports, and type hash candidates require checking the record's name.
+//!
+//! See the [LLVM PDB guide](https://llvm.org/docs/PDB/index.html) and
+//! [native structures](https://llvm.org/doxygen/RawTypes_8h.html) for format
+//! documentation and an independent open-source implementation.
 //!
 //! # In-memory roundtrip
 //!
@@ -29,12 +47,11 @@
 //!
 //! # Status and limits
 //!
-//! This library is alpha-quality: APIs may change, and not every PDB/CodeView
-//! variant is supported. Missing streams and unsupported records can return
-//! errors. The builder writes supported records, not lossless edits of arbitrary
-//! PDBs. There is no high-level address-to-source symbolication API. Robust
-//! handling of every hostile input is not guaranteed; apply resource limits or
-//! isolation when processing untrusted files.
+//! Alpha-quality: APIs may change, and missing streams or unsupported records can
+//! return errors. The builder is not a lossless editor. There is no high-level
+//! address-to-source resolver or Portable PDB reader. C13 access is not complete
+//! line resolution. Use resource limits or isolation for untrusted input; robust
+//! handling of every hostile file is not guaranteed.
 
 pub(crate) use msf::MsfStreamLayout;
 pub use msf::StreamIndex;

@@ -1,3 +1,5 @@
+//! Shared CodeView symbol records referenced by the DBI global/public indexes.
+
 use std::io;
 
 use derive_getters::Getters;
@@ -7,8 +9,11 @@ use crate::codeview::PrefixedRecord;
 use crate::codeview::symbols::SymbolRecord;
 use crate::result::{Error, Result};
 
-/// Represents the Global Symbol Stream (often referred to as the "symbol record stream").
-/// It contains a flat list of `SymbolRecord`s which encompass global symbols (e.g. Data, Procedure, Public).
+/// The shared symbol record stream identified by DBI's `sym_record_stream_index`.
+///
+/// This is distinct from the global and public hash-index streams. Records are
+/// decoded into a vector in stream order; vector indices are not the byte
+/// offsets stored in those indexes. Module-local symbols live in module streams.
 #[derive(Debug, Getters)]
 pub struct Symbols {
     records: Vec<SymbolRecord>,

@@ -1,3 +1,7 @@
+//! PDB identity, named-stream discovery, and feature signatures (stream 1).
+//!
+//! See LLVM's [Info stream guide](https://llvm.org/docs/PDB/PdbStream.html).
+
 use std::{fmt, io};
 
 use declio::util::Bytes;
@@ -16,8 +20,10 @@ const SUPPORTED_VERSIOMS: &[PdbVersion] = &[
     PdbVersion::Vc140,
 ];
 
-/// The PDB Info Stream (aka the PDB Stream).
-/// It contains basic file information, the named stream map, and features to match the PDB to its executable.
+/// PDB identity, named-stream map, and trailing feature signatures.
+///
+/// For an RSDS executable debug record, match both GUID and age. Feature
+/// signatures describe format capabilities; they are not identity fields.
 #[derive(Debug, Getters)]
 pub struct PdbInfo {
     header: PdbInfoHeader,
@@ -26,7 +32,7 @@ pub struct PdbInfo {
 }
 
 impl PdbInfo {
-    /// Reads the PDB Info Stream from a reader.
+    /// Decodes an Info stream with version VC70, VC80, VC110, or VC140.
     pub fn read<R: io::Read>(mut reader: R) -> Result<Self> {
         let header = PdbInfoHeader::decode((), &mut reader)?;
         if !SUPPORTED_VERSIOMS.contains(&header.version) {
@@ -49,11 +55,11 @@ impl PdbInfo {
 pub struct PdbInfoHeader {
     /// The version of the PDB stream. Typically VC70.
     pub version: PdbVersion,
-    /// A 32-bit time-stamp generated with a call to time(). Often ignored in favor of Guid.
+    /// Legacy signature, often a timestamp; not necessarily a wall-clock time.
     pub signature: u32,
-    /// The number of times the PDB file has been written.
+    /// Revision counter used with `guid` to match the executable's debug record.
     pub age: u32,
-    /// A 128-bit identifier guaranteed to be unique across space and time.
+    /// PDB identifier used with `age` for executable matching.
     pub guid: Guid,
 }
 
@@ -68,7 +74,10 @@ pub struct NamedStreams {
 }
 
 impl NamedStreams {
-    /// Iterates over the named streams.
+    /// Iterates over UTF-8 stream names and their MSF indices.
+    ///
+    /// Names that are not valid UTF-8 are skipped; fixed-index streams need not
+    /// appear in this map.
     pub fn iter(&self) -> impl Iterator<Item = (&str, StreamIndex)> {
         self.offset_index_map.entries().iter().filter_map(|kv| {
             let v = &self.name_buffer[kv.key as usize..]
@@ -79,7 +88,7 @@ impl NamedStreams {
         })
     }
 
-    /// Gets the stream index for a given stream name.
+    /// Finds a stream by an exact, case-sensitive name using a linear scan.
     pub fn get(&self, name: &str) -> Option<StreamIndex> {
         self.iter().find(|(k, _)| k == &name).map(|(_, v)| v)
     }
@@ -133,7 +142,8 @@ pub enum PdbFeature {
     Vc140 = 20_140_508,
     /// Presumably duplicate types can appear in the TPI Stream.
     NoTypeMerge = 0x4D54_4F4E,
-    /// Program was linked with /DEBUG:FASTLINK. No TPI/IPI stream; all type info is in the original object files.
+    /// `/DEBUG:FASTLINK` marker: type information may require original object files.
+    /// This library does not retrieve those external records.
     MinimalDebugInfo = 0x494E_494D,
 }
 

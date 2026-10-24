@@ -1,3 +1,5 @@
+//! String encoding and internal alignment/comparison helpers.
+
 use std::cmp::Ordering;
 use std::{fmt, io};
 
@@ -7,10 +9,15 @@ pub(crate) const fn align_to(val: usize, align: usize) -> usize {
     val.div_ceil(align) * align
 }
 
+/// An owned UTF-8 string encoded as NUL-terminated bytes by `declio`.
+///
+/// Decoding rejects invalid UTF-8. Construction does not reject embedded NULs;
+/// such a value will decode only up to its first NUL when read back.
 #[derive(Default)]
 pub struct StrBuf(Box<str>);
 
 impl StrBuf {
+    /// Wraps a string without validating it for the NUL-terminated wire format.
     pub fn new<S: Into<Box<str>>>(str: S) -> Self {
         Self(str.into())
     }

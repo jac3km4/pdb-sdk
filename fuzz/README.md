@@ -1,85 +1,74 @@
-# Standalone fuzzing
+# Fuzzing
 
-This is an independent Cargo workspace. CI compile-checks both targets but does
-not run fuzz campaigns. It uses `libfuzzer-sys`, the parent crate by path, and the
-same pinned `declio` Git revision as the parent. Keep that revision synchronized
-when the parent changes it. The lockfile is checked in; generated outputs are
-ignored.
+This independent Cargo workspace uses `libfuzzer-sys` and the parent crate by
+path. Keep its pinned `declio` revision synchronized with the parent. CI
+compile-checks both targets; it does not run campaigns. The lockfile is tracked;
+generated output is ignored.
 
-## Targets and limits
+## Targets
 
-- `pdb`: accepts at most 16 MiB, opens an MSF/PDB from a borrowed byte slice,
-  then independently attempts info, TPI, IPI, and DBI. Successful metadata reads
-  enable `/names`, both type hash streams, publics, globals, symbols, section
-  headers, frame data, FPO, and module streams. Failure of an optional getter
-  does not prevent the others from being tried. Visits up to 128 modules and
-  256 records per collection, including module symbols and decoded C13
-  subsections. Stream getters themselves decode their entire requested stream.
-- `records`: accepts at most 64 KiB and independently calls `Decode` on
-  `TypeRecord`, `IdRecord`, and `SymbolRecord` using the same input. Input starts
-  with the little-endian record kind followed by its payload; there is **no**
-  outer record-length prefix or harness selector byte. Trailing bytes and decode
-  errors are allowed.
+| Target | Maximum input | Work |
+| --- | --- | --- |
+| `pdb` | 16 MiB | Open MSF; try Info, TPI, IPI, DBI and dependent streams |
+| `records` | 64 KiB | Decode the same bytes independently as `TypeRecord`, `IdRecord`, and `SymbolRecord` |
 
-Errors are normal fuzz outcomes; panics are not caught. Oversized inputs are
-rejected, not truncated. Input and traversal caps reduce routine work but do
-**not** impose a hard in-process memory or CPU bound: malicious counts/lengths
-can cause allocations or substantial work inside a decoder before it returns.
-Do not run untrusted campaigns without process-level resource limits/isolation.
+`pdb` tries `/names`, both type hashes, public/global indexes, symbols, section
+headers, FPO/frame data, and modules when metadata permits. Optional failures do
+not stop other getters. Traversal visits up to 128 modules and 256 records per
+collection, including module symbols/C13 subsections; getters still decode entire
+requested streams.
+
+`records` expects a little-endian kind followed by payload: **no outer length
+prefix or selector byte**. Trailing bytes and decode errors are allowed. See
+[LLVM's CodeView guide](https://llvm.org/docs/PDB/CodeViewTypes.html) for framing;
+the harness deliberately omits the enclosing stream record length.
+
+Errors are expected; panics are not caught. Oversized inputs are rejected, not
+truncated. Input/traversal caps are **not** hard CPU or memory limits: decoders may
+allocate from malicious counts before returning. Use process-level isolation and
+resource limits.
 
 ## Build and run
 
-Use a supported cargo-fuzz platform, preferably Linux (or Linux in WSL2 on
-Windows), with a nightly Rust toolchain, a C++ compiler, and `cargo-fuzz`:
+Prefer Linux or WSL2 with nightly Rust, a C++ compiler, and `cargo-fuzz`:
 
 ```sh
 rustup toolchain install nightly --profile minimal --no-self-update
 cargo install cargo-fuzz --locked
-# Run these commands from the repository root.
+# From the repository root:
 cargo check --locked --manifest-path fuzz/Cargo.toml
 mkdir -p fuzz/corpus/pdb fuzz/corpus/records fuzz/output
 cp tests/corpus/*.pdb fuzz/corpus/pdb/
 ```
 
-Seed the container target with copies of the existing `tests/corpus/*.pdb`, not
-with an in-place writable corpus pointing at the test fixtures. Inputs larger
-than 16 MiB need a deliberately revised cap; do not truncate valid seed PDBs.
-For `records`, use raw individual CodeView records (kind + payload), not whole
-PDB files or their outer length prefixes. The target can also start empty.
+Copy seeds; never point a writable fuzz corpus at checked-in fixtures. Do not
+truncate valid PDBs to meet the cap. Seed `records` with kind + payload records,
+not whole PDBs or length prefixes; an empty corpus also works.
 
-Example bounded campaigns from the repository root on Linux/WSL2:
+Bounded Linux/WSL2 campaigns:
 
 ```sh
 timeout --kill-after=10s 10m cargo +nightly fuzz run pdb -- -max_len=16777216 -timeout=5 -rss_limit_mb=2048 -max_total_time=540
 timeout --kill-after=10s 10m cargo +nightly fuzz run records -- -max_len=65536 -timeout=5 -rss_limit_mb=2048 -max_total_time=540
 ```
 
-`-timeout` limits each test case; `-max_total_time` limits the fuzzing campaign;
-GNU `timeout` also bounds the surrounding build/run process. libFuzzer's RSS
-limit is monitored, not a hard OS allocation limit. In addition, run the entire
-process tree in a memory-limited container/cgroup (for example 3 GiB with swap
-also constrained) or a Windows Job Object with memory and time limits. Account
-for compiler and sanitizer overhead when choosing limits. A virtual-address
-space `ulimit` can conflict with sanitizer shadow-memory reservations; prefer
-RSS/cgroup limits. Native Windows sanitizer/cargo-fuzz support varies, so a
-plain `cargo check` is only a compilation check, not a fuzz campaign.
+`-timeout` limits a case; `-max_total_time` limits the campaign. GNU `timeout`
+also bounds build/run time. libFuzzer's RSS limit is monitored, not a hard OS
+limit. Limit the entire process tree with a container/cgroup (for example 3 GiB,
+including constrained swap) or Windows Job Object; allow compiler/sanitizer
+headroom. Virtual-address `ulimit` can conflict with sanitizer shadow memory.
+Native Windows support varies; `cargo check` alone is not a fuzz campaign.
 
-Generated corpora, artifacts, coverage, build files, and optional logs under
-`fuzz/output/` stay local. Do not redistribute seeds without checking their
-provenance and licensing.
+Keep generated corpora, artifacts, coverage, build output, and optional
+`fuzz/output/` logs local. Check seed provenance/licensing before redistribution.
 
-## Reproduce, minimize, and retain regressions
+## Retain regressions
 
-1. Save the target, toolchain, command, limits, and original artifact. Reproduce
-   with the same target and resource limits, for example:
-   `cargo +nightly fuzz run pdb fuzz/artifacts/pdb/crash-<hash>`.
-2. Minimize with `cargo +nightly fuzz tmin pdb fuzz/artifacts/pdb/crash-<hash>`
-   (use `records` for record failures), under external memory/time limits too.
-   Confirm the minimized input still triggers the same failure. Minimize timeout
-   and OOM cases with consistent limits; do not mistake another failure for the
-   original bug.
-3. Fix the parser separately and add a deterministic regression test with the
-   smallest necessary, provenance-safe input. Prefer synthetic byte construction
-   when practical. Any retained binary belongs in an explicitly reviewed test
-   fixture location, not an ignored generated fuzz directory. Keep minimized
-   regressions after the fix; do not commit bulk corpora, raw artifacts, or logs.
+1. Save the target, toolchain, command, limits, and artifact. Reproduce under the
+   same limits: `cargo +nightly fuzz run pdb fuzz/artifacts/pdb/crash-<hash>`.
+2. Minimize: `cargo +nightly fuzz tmin pdb fuzz/artifacts/pdb/crash-<hash>`.
+   Use `records` for record failures and external memory/time limits for both.
+   Confirm it is the same failure; use consistent limits for timeout/OOM cases.
+3. Fix the parser separately and add a deterministic, provenance-safe regression
+   test. Prefer synthetic bytes; retain necessary binaries only in reviewed test
+   fixture locations. Keep minimized regressions, not bulk corpora or raw logs.

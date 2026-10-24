@@ -1,3 +1,9 @@
+//! `declio` adapters for PDB record fields and bounded record remainders.
+//!
+//! Remainder decoders read to EOF, so callers must limit the reader to the
+//! containing record or region. PDB numeric fields use little-endian encoding;
+//! see LLVM's [PDB documentation](https://llvm.org/docs/PDB/index.html).
+
 pub use declio::util::byte_array;
 
 #[cfg(test)]
@@ -56,6 +62,10 @@ mod tests {
     }
 }
 
+/// Four-byte little-endian optional index adapter.
+///
+/// Encoding writes zero for `None`; decoding maps any failed `TryFrom<u32>`
+/// conversion to `None`. For nonzero index wrappers, only zero is rejected.
 pub mod optional_index {
     use declio::{Decode, Encode, Error};
 
@@ -89,6 +99,9 @@ pub mod optional_index {
     }
 }
 
+/// Uncounted list occupying the reader's remaining bytes, without padding.
+///
+/// Decoding rejects elements that consume no bytes.
 pub mod rem_list {
     use declio::{Decode, Encode, EncodedSize};
 
@@ -135,6 +148,7 @@ pub mod rem_list {
     }
 }
 
+/// Raw bytes occupying the reader's remainder, with no length prefix.
 pub mod rem_bytes {
     pub fn decode<Ctx, R>(_ctx: Ctx, reader: &mut R) -> Result<Vec<u8>, declio::Error>
     where
@@ -159,6 +173,11 @@ pub mod rem_bytes {
     }
 }
 
+/// Uncounted list with each element padded to a multiple of four bytes.
+///
+/// Encoding writes descending `LF_PADn` bytes. Decoding skips the implied
+/// padding without checking its contents and rejects missing padding or
+/// elements that consume no bytes. No per-element length prefix is added.
 pub mod padded_rem_list {
     use declio::{Decode, Encode, EncodedSize};
 
@@ -239,6 +258,7 @@ pub mod padded_rem_list {
     }
 }
 
+/// Implements `declio` codecs using a bitfield's byte-array conversion methods.
 #[macro_export]
 macro_rules! impl_bitfield_codecs {
     ($ty:ty) => {
@@ -273,6 +293,9 @@ macro_rules! impl_bitfield_codecs {
     };
 }
 
+/// Implements little-endian `declio` codecs for a `modular_bitfield` specifier.
+///
+/// Invalid specifier values are returned as codec errors.
 #[macro_export]
 macro_rules! impl_bitfield_specifier_codecs {
     ($ty:ty) => {

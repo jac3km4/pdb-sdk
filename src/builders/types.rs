@@ -14,13 +14,18 @@ use crate::types::{
 use crate::utils::align_to;
 use crate::{MsfStreamLayout, TypeIndex};
 
+/// Builder for TPI type records (stream 2).
 pub type TpiBuilder = TypeStreamBuilder<TypeRecord>;
+/// Builder for IPI ID records (stream 4), with its own index sequence.
 pub type IpiBuilder = TypeStreamBuilder<IdRecord>;
 
 impl TpiBuilder {
-    /// Add a field list, automatically splitting into continuation chains
-    /// (via `LF_INDEX` / [`TypeRecord::ListContinuation`]) when the encoded
-    /// size would exceed the u16 length-prefix limit.
+    /// Adds a field list, splitting large lists with `LF_INDEX` continuations.
+    ///
+    /// Returns the head index; continuation chunks are inserted tail-first.
+    /// Hash labels are `name` for the tail, then `name_1`, `name_2`, etc. toward
+    /// the head. Fields must be valid field-list members and individually fit
+    /// the record-size limit; a single oversized field is not split.
     pub fn add_field_list(&mut self, name: &str, fields: Vec<TypeRecord>) -> TypeIndex {
         const MAX_FIELD_LIST_PAYLOAD: usize = u16::MAX as usize - 4;
 
@@ -75,6 +80,11 @@ impl TpiBuilder {
     }
 }
 
+/// Collects TPI or IPI records and their name hashes without deduplication.
+///
+/// Each stream assigns consecutive indices from `0x1000`. References are used
+/// verbatim; add dependencies first where possible. Commit emits a separate hash
+/// stream with record-data-relative byte offsets.
 #[derive(Debug)]
 pub struct TypeStreamBuilder<A> {
     records: Vec<A>,
@@ -87,6 +97,11 @@ impl<A> TypeStreamBuilder<A>
 where
     A: Encode + EncodedSize,
 {
+    /// Appends a record and returns its index in this stream, not a byte offset.
+    ///
+    /// `name` supplies only the name hash; it does not set a name in the record.
+    /// The padded record body must fit a `u16` length prefix; oversized records
+    /// fail during commit. References and record kinds are not validated here.
     pub fn add(&mut self, name: &str, record: A) -> TypeIndex {
         let size = u16::default_encoded_size(()) + record.encoded_size(());
         self.offset += align_to(size, RECORD_ALIGNMENT);

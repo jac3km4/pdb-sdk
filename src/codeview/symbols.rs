@@ -1,3 +1,10 @@
+//! CodeView symbol records used by PDB symbol and module streams.
+//!
+//! Symbols refer to other symbols by stream byte offsets, and to types or IDs
+//! by indices. Each symbol has a length prefix; `SymbolRecord` encodes only the
+//! kind and body. See LLVM's
+//! [symbol record reference](https://llvm.org/docs/PDB/CodeViewSymbols.html).
+
 use std::fmt::Debug;
 
 use declio::util::LittleEndian;
@@ -13,7 +20,10 @@ use crate::{
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS", id_type = "LittleEndian<u16>")]
-/// CodeView Symbol Record, representing various symbols (e.g., procedures, locals, labels).
+/// Supported symbol kinds and bodies, including procedures, locals, and labels.
+///
+/// Some variants represent only part of the on-disk body; for example, inline
+/// site annotations are not decoded.
 pub enum SymbolRecord {
     /// List of inlinees.
     #[declio(id = "constants::S_INLINEES.into()")]
@@ -112,16 +122,16 @@ pub enum SymbolRecord {
     /// A global procedure.
     #[declio(id = "constants::S_GPROC32.into()")]
     GlobalProc(Procedure),
-    /// A local procedure ID.
+    /// Local procedure whose function reference is an IPI ID.
     #[declio(id = "constants::S_LPROC32_ID.into()")]
     ProcId(Procedure),
-    /// A global procedure ID.
+    /// Global procedure whose function reference is an IPI ID.
     #[declio(id = "constants::S_GPROC32_ID.into()")]
     GlobalProcId(Procedure),
     /// A DPC procedure.
     #[declio(id = "constants::S_LPROC32_DPC.into()")]
     DPCProc(Procedure),
-    /// A DPC procedure ID.
+    /// DPC procedure whose function reference is an IPI ID.
     #[declio(id = "constants::S_LPROC32_DPC_ID.into()")]
     DPCProcId(Procedure),
     /// A variable stored in a register.
@@ -211,7 +221,7 @@ pub enum SymbolRecord {
         /// Section index of the enclosing scope.
         parent_section: u16,
     },
-    /// A local variable or parameter.
+    /// Local variable or parameter; following `S_DEFRANGE*` records describe its live ranges.
     #[declio(id = "constants::S_LOCAL.into()")]
     Local {
         /// Type of the local variable.
@@ -225,7 +235,7 @@ pub enum SymbolRecord {
     /// A definition range for a local variable.
     #[declio(id = "constants::S_DEFRANGE.into()")]
     DefRange {
-        /// Program counter/address.
+        /// DIA program describing how to evaluate the variable.
         program: u32,
         /// Range where the variable is valid.
         range: LocalVariableRange,
@@ -236,7 +246,7 @@ pub enum SymbolRecord {
     /// A definition range for a subfield.
     #[declio(id = "constants::S_DEFRANGE_SUBFIELD.into()")]
     DefRangeSubfield {
-        /// Program counter/address.
+        /// DIA program describing how to evaluate the variable.
         program: u32,
         /// Offset within the parent structure.
         offset_in_parent: u16,
@@ -451,14 +461,14 @@ pub enum SymbolRecord {
         /// Cookie flags.
         flags: u8,
     },
-    /// Lists the callers of a procedure.
+    /// `S_CALLEES`: callee references (despite this variant's name).
     #[declio(id = "constants::S_CALLEES.into()")]
     Caller {
         /// List of type indices.
         #[declio(with = "codecs::padded_rem_list")]
         types: Vec<TypeIndex>,
     },
-    /// Lists the callees of a procedure.
+    /// `S_CALLERS`: caller-list kind; its body is not represented here.
     #[declio(id = "constants::S_CALLERS.into()")]
     Callee,
     /// A user-defined type (UDT) symbol.
@@ -591,7 +601,9 @@ pub enum SymbolRecord {
 }
 
 impl SymbolRecord {
-    /// Gets the name of the symbol if it has one.
+    /// Returns the stored name for variants handled by this accessor.
+    ///
+    /// This does not demangle names; unhandled variants return `None`.
     pub fn name(&self) -> Option<&str> {
         match self {
             SymbolRecord::Thunk32 { name, .. }
@@ -635,23 +647,23 @@ impl SymbolRecord {
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// Range where a local variable is valid.
+/// Section-relative live range of a local variable, excluding any listed gaps.
 pub struct LocalVariableRange {
-    /// Start offset.
+    /// Starting byte offset within `i_sect_start`.
     pub offset_start: u32,
     /// Start section index.
     pub i_sect_start: u16,
-    /// Length of the range.
+    /// Length in bytes.
     pub range: u16,
 }
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// Gap in a local variable's valid range.
+/// Subrange of a `LocalVariableRange` where the variable is not live.
 pub struct LocalVariableGap {
-    /// Start offset of the gap.
+    /// Byte offset relative to `LocalVariableRange::offset_start`.
     pub gap_start_offset: u16,
-    /// Length of the gap.
+    /// Length of the gap in bytes.
     pub range: u16,
 }
 
@@ -669,7 +681,9 @@ pub struct Version {
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// Record describing a public symbol.
+/// `S_PUB32` body: public name, flags, and section-relative address.
+///
+/// Unlike a procedure or data record, this body has no type index.
 pub struct Public {
     /// Public properties.
     pub properties: PublicProperties,
@@ -681,7 +695,7 @@ pub struct Public {
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// Record describing a user-defined type (UDT).
+/// Named reference to a user-defined type, not the type's TPI definition.
 pub struct UserDefinedType {
     /// Type index of the user-defined type.
     pub udt_type: TypeIndex,
@@ -750,11 +764,11 @@ pub struct ArmSwitchTable {
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// Reference to a procedure in another module.
+/// Module-and-offset reference to a procedure symbol.
 pub struct ProcedureRef {
     /// Sum name for the procedure ref.
     pub sum_name: u32,
-    /// Offset of the referent symbol.
+    /// Byte offset of the referent in the selected module's symbol stream.
     pub referent: SymbolOffset,
     /// Module number.
     pub module: u16,
@@ -764,7 +778,11 @@ pub struct ProcedureRef {
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
-/// Record describing a procedure.
+/// Body shared by local, global, DPC, and ID procedure symbols.
+///
+/// Scope links are symbol-stream offsets; `code_offset` is a section-relative
+/// address. The enclosing variant determines whether `function_type` refers
+/// to a TPI type or an IPI function ID.
 pub struct Procedure {
     /// Optional offset of the parent symbol.
     #[declio(with = "codecs::optional_index")]
@@ -780,7 +798,7 @@ pub struct Procedure {
     pub dbg_start_offset: u32,
     /// Debug end offset.
     pub dbg_end_offset: u32,
-    /// Type index of the function.
+    /// TPI function type or IPI function ID, represented as `TypeIndex`.
     #[declio(with = "codecs::optional_index")]
     pub function_type: Option<TypeIndex>,
     /// Offset of the code region.
@@ -911,9 +929,9 @@ pub struct LocalProperties {
     pub is_return_value: bool,
     /// Has been optimized out.
     pub is_optimized_out: bool,
-    /// Is a registered global.
+    /// Is an enregistered global.
     pub is_registered_global: bool,
-    /// Is a registered static.
+    /// Is an enregistered static.
     pub is_registered_static: bool,
     #[skip]
     unused: B5,

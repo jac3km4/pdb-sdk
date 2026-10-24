@@ -1,3 +1,8 @@
+//! TPI type records, IPI ID records, and their separate hash streams.
+//!
+//! TPI (stream 2) and IPI (stream 4) share a layout, not an index space or record
+//! set. See LLVM's [TPI/IPI guide](https://llvm.org/docs/PDB/TpiStream.html).
+
 use std::fmt::Debug;
 use std::io;
 
@@ -23,13 +28,16 @@ magic_bytes! {
     pub HashKeySize(&4u32.to_le_bytes());
 }
 
-/// The PDB TPI Stream, containing CodeView Type Records.
+/// TPI records describing types, including aggregates and procedure signatures.
 pub type TpiStream = TypeStream<TypeRecord>;
-/// The PDB IPI Stream, containing CodeView ID Records.
+/// IPI records for function IDs, strings, build information, and source references.
 pub type IpiStream = TypeStream<IdRecord>;
 
-/// Represents the TPI or IPI stream, containing information about types or IDs.
-/// It contains a header followed by a list of CodeView records.
+/// An owned, decoded TPI or IPI header and record collection.
+///
+/// Reading supports only V80, a 56-byte header, 4-byte hash keys, and the record
+/// kinds represented by the corresponding CodeView enum. Record count must match
+/// the header's half-open index range. References between records are not resolved.
 #[derive(Debug, Getters)]
 pub struct TypeStream<A> {
     header: TypeStreamHeader,
@@ -86,7 +94,9 @@ impl<A> TypeStream<A> {
 }
 
 impl TypeStream<TypeRecord> {
-    /// Retrieves a type or ID record by its index.
+    /// Returns the TPI record at `idx`, or `None` outside the header's index range.
+    ///
+    /// Simple built-in types normally lie below this range and have no record.
     pub fn record(&self, idx: TypeIndex) -> Option<&TypeRecord> {
         let offset = u32::from(idx).checked_sub(u32::from(self.header.type_index_begin))?;
         self.records.get(usize::try_from(offset).ok()?)
@@ -94,7 +104,9 @@ impl TypeStream<TypeRecord> {
 }
 
 impl TypeStream<IdRecord> {
-    /// Retrieves a type or ID record by its index.
+    /// Returns the IPI record at `idx`, or `None` outside the header's index range.
+    ///
+    /// The index is interpreted in this IPI stream, not in TPI.
     pub fn record(&self, idx: IdIndex) -> Option<&IdRecord> {
         let offset = u32::from(idx).checked_sub(u32::from(self.header.type_index_begin))?;
         self.records.get(usize::try_from(offset).ok()?)
@@ -116,9 +128,9 @@ pub struct TypeStreamHeader {
     /// The number of bytes of type record data following the header.
     pub type_record_bytes: u32,
 
-    /// The index of a stream which contains a list of hashes for every type record.
+    /// Index of the separate hash stream, or `0xffff` when absent.
     pub hash_stream_index: StreamIndex,
-    /// Presumably the index of a stream which contains a separate hash table.
+    /// Auxiliary hash stream index; this library does not read that stream.
     pub hash_aux_stream_index: StreamIndex,
     /// The size of a hash value (usually 4 bytes).
     pub hash_key_size: HashKeySize,
@@ -164,7 +176,10 @@ pub struct TypeHashLayout {
     hash_adjusters: EmbeddedBuf,
 }
 
-/// The TPI/IPI Hash Stream, providing accelerated O(log(n)) lookup by type index.
+/// Decoded hash values, sparse index/offset pairs, and hash adjusters.
+///
+/// The sparse offsets are stored but not used for public lookup. Records in
+/// [`TypeStream`] are already decoded and accessed directly by index.
 #[derive(Debug)]
 pub struct TypeHash {
     pub(crate) hash_values: Vec<u32>,
@@ -174,7 +189,11 @@ pub struct TypeHash {
 }
 
 impl TypeHash {
-    /// Gets the type index for a given name using the hash stream.
+    /// Returns the first index whose stored hash matches the V1 hash of `name`.
+    ///
+    /// This scans linearly and assumes records begin at `0x1000`. It does not
+    /// compare names, resolve collisions, apply hash adjusters, or handle every
+    /// type-record hashing rule. A result is only a candidate; verify its record.
     pub fn get_index(&self, name: &str) -> Option<TypeIndex> {
         let hash = hash_v1(name.as_bytes()).checked_rem(self.bucket_count)?;
         let i = self.hash_values.iter().position(|&i| i == hash)?;

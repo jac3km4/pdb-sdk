@@ -1,3 +1,5 @@
+//! Public-symbol indexes and address/thunk maps, separate from symbol records.
+
 use std::collections::BTreeMap;
 use std::io;
 
@@ -10,12 +12,18 @@ use crate::result::Result;
 use crate::symbol_map::SymbolMap;
 use crate::{SymbolOffset, constants};
 
-/// Represents the Publics Stream.
-/// This stream exposes a hash map of public symbols (via `SymbolMap`), an address map, and a thunk map.
+/// The public-symbol hash index with address and thunk maps.
+///
+/// Public records reside in the separate shared symbol record stream. A PDB
+/// public symbol is not necessarily a PE export. This type exposes the parsed
+/// maps, but does not implement name or nearest-address lookup.
 #[derive(Debug, Getters)]
 pub struct Publics {
+    /// Hash index referring to records in the shared symbol record stream.
     map: SymbolMap,
+    /// Symbol-record byte offsets ordered by the public symbols' addresses.
     address_map: Vec<SymbolOffset>,
+    /// Raw thunk-map entries; no thunk resolution is performed.
     thunk_map: Vec<u32>,
 }
 

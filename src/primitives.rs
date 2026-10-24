@@ -1,3 +1,10 @@
+//! Shared CodeView indices, offsets, identifiers, and numeric leaves.
+//!
+//! `TypeIndex` identifies a simple type or a TPI record; `IdIndex` identifies an
+//! IPI record. Neither is a byte offset. `SymbolOffset` and `StringOffset` are
+//! byte offsets in their respective streams or tables. See LLVM's
+//! [PDB format documentation](https://llvm.org/docs/PDB/index.html).
+
 use std::num::NonZeroU32;
 use std::{fmt, io, mem};
 
@@ -6,7 +13,7 @@ use declio::{Decode, Encode, EncodedSize};
 use crate::result::Result;
 use crate::{codecs, constants};
 
-/// An offset into a string table.
+/// Byte offset into a string table, not an IPI string ID.
 #[derive(Debug, Clone, Copy, Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct StringOffset(pub(crate) u32);
@@ -17,6 +24,11 @@ pub struct IndexIsZero;
 
 macro_rules! record_index {
     ($name:ident) => {
+        /// Nonzero CodeView index, not a byte offset.
+        ///
+        /// `TypeIndex` is used for simple types and TPI references; `IdIndex` for
+        /// IPI references. Construction checks only that the value is nonzero,
+        /// not that a corresponding record exists.
         #[derive(Clone, Copy, PartialEq, Eq, Hash)]
         pub struct $name(NonZeroU32);
 
@@ -71,7 +83,7 @@ macro_rules! record_index {
     };
 }
 
-/// An offset indicating the position of a symbol record within its stream.
+/// Byte offset of a symbol record within its symbol stream, not a type index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Decode, Encode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct SymbolOffset(pub(crate) u32);
@@ -91,7 +103,9 @@ impl From<SymbolOffset> for u32 {
 record_index!(IdIndex);
 record_index!(TypeIndex);
 
-/// A 128-bit identifier guaranteed to be unique across space and time. Used to match a PDB to its corresponding executable.
+/// Raw 16-byte GUID used as part of the identity matching a PDB to an executable.
+///
+/// This wrapper does not generate or validate identifiers.
 #[derive(Default, Encode, Decode, EncodedSize)]
 pub struct Guid(#[declio(with = "codecs::byte_array")] pub [u8; 16]);
 
@@ -120,9 +134,11 @@ impl fmt::Debug for Guid {
     }
 }
 
-/// Represents an integer value encoded as a CodeView numeric leaf.
-/// The conversion constructors choose the smallest supported representation.
-/// Used in CodeView type records.
+/// Integer-valued CodeView numeric leaf used in type and constant records.
+///
+/// Unsigned values below `LF_NUMERIC` encode directly in two bytes; larger
+/// values and signed variants use a leaf tag followed by the value. Encoding
+/// follows the selected variant rather than minimizing every value.
 #[derive(Debug)]
 pub enum Integer {
     I16(i16),
@@ -135,7 +151,7 @@ pub enum Integer {
 }
 
 impl Integer {
-    /// Create an Integer from an unsigned value, using smallest encoding
+    /// Chooses the first fitting unsigned variant among `U16`, `U32`, and `U64`.
     pub fn from_unsigned(val: u64) -> Self {
         if val <= u16::MAX as u64 {
             Integer::U16(val as u16)
@@ -146,7 +162,7 @@ impl Integer {
         }
     }
 
-    /// Create an Integer from a signed value, using smallest encoding
+    /// Chooses the first fitting signed variant among `I16`, `I32`, and `I64`.
     pub fn from_signed(val: i64) -> Self {
         if val >= i16::MIN as i64 && val <= i16::MAX as i64 {
             Integer::I16(val as i16)

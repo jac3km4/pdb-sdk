@@ -1,3 +1,5 @@
+//! Write demonstration records to `custom.pdb`, overwriting any existing file.
+
 use std::fs::File;
 use std::io;
 
