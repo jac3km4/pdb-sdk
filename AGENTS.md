@@ -1,53 +1,29 @@
-## Commands
-```bash
-# Run linting with warnings treated as errors (required by CI)
-cargo clippy --all-targets --all-features -- -D warnings
+# Agent guide
 
-# Run full test suite (skips yaml2pdb if LLVM is missing)
-cargo test
+See [README.md](README.md#development) for development workflows and
+`.github/workflows/ci.yml` for CI.
 
-# Update snapshot tests
-INSTA_UPDATE=always cargo test
-# or
-cargo insta review
+## Design
 
-# Setup environment (to run all tests including yaml2pdb)
-sudo apt-get update && sudo apt-get install -y llvm
-```
+- Preserve per-stream access without loading the whole PDB.
+- Prefer `declio` and `modular-bitfield` for binary records.
+- Validate input sizes, offsets, and arithmetic before allocating or indexing;
+  malformed PDBs must return errors, not panic.
+- MSF alignment, padding, and seeking changes need tests asserting stream
+  positions and decoded values.
+- Ask before significant public stream API changes, runtime dependency changes,
+  encoding/snapshot library replacements, or MSRV increases.
 
-## Boundaries
+## Navigation
 
-### Always do
-- Run `cargo clippy --all-targets --all-features -- -D warnings` and `cargo test` before submitting a PR.
-- Use `insta` for structural snapshot testing when writing parsers.
-- Use declarative encoding/decoding (`declio` and `modular-bitfield`) when possible.
+- `src/lib.rs`: PDB access; `src/msf.rs`: container and streams.
+- `src/codeview/`: records; `src/codecs.rs`: encoding helpers.
+- `tests/test.rs`: round trips, real PDBs, LLVM fixtures.
 
-### Ask first
-- Before significantly changing the public MSF/PDB stream reading API in `src/lib.rs`.
-- Before adding or removing core dependencies (currently lightweight: `declio`, `modular-bitfield`, `insta`).
+## CI
 
-### Never do
-- Prefer third-party actions like `dtolnay/rust-toolchain` over just invoking builtin commands like `rustup toolchain install stable --profile minimal --component clippy --no-self-update` for GitHub Actions workflows.
-
-## Project Structure
-```text
-src/             # Core library code. Exposes core stream types: PdbFile, MsfStream, DbiStream, TpiStream/IpiStream, PdbInfo, Symbols.
-src/codeview/    # Definitions for PDB CodeView symbols (symbols.rs) and types (types.rs). Pure data structures.
-tests/           # Integration tests using YAML fixtures (`test.rs`). Relies on LLVM tools for full coverage.
-examples/        # Examples for reading and writing PDBs.
-```
-
-## Testing
-- **Framework:** `cargo test`
-
-## Git Workflow
-Branch naming:
-  feat/[short-description]
-  fix/[short-description]
-  chore/[short-description]
-
-Commit format: [prefix]: [what changed in imperative mood]
-  Example: feat: add DWARF v5 support for symbols
-
-PR name format: [prefix]: [what changed in imperative mood]
-  Example: feat: add DWARF v5 support for symbols
+- Install Rust via `rustup toolchain install` with `--profile minimal
+  --no-self-update`, not an action.
+- Use action version tags; Dependabot handles updates.
+- Separate caches by job, OS, and toolchain; write only on `master`.
+- Retain read-only permissions and superseded-run cancellation.
