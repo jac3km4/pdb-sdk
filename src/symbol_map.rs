@@ -46,16 +46,27 @@ impl SymbolMap {
     where
         S: NamedSymbol,
     {
-        let mut bucket_starts = [0u32; IPHR_HASH];
-        let mut hash_records: Vec<_> = std::iter::repeat_with(|| IndexRecord::new(SymbolOffset(0)))
-            .take(mapping.len())
-            .collect();
-
-        for el in mapping.values() {
-            let hash = hash_v1(el.name().unwrap_or_default().as_bytes());
-            let bucket_index = hash % IPHR_HASH as u32;
-            bucket_starts[bucket_index as usize] += 1;
+        #[derive(Clone, Copy)]
+        struct PreparedEntry<'a> {
+            offset: SymbolOffset,
+            name: CaseInsensitiveStr<'a>,
+            bucket: usize,
         }
+
+        let mut bucket_starts = [0u32; IPHR_HASH];
+        let mut entries: Vec<_> = mapping
+            .iter()
+            .map(|(&offset, symbol)| {
+                let name = symbol.name().unwrap_or_default();
+                let bucket = (hash_v1(name.as_bytes()) % IPHR_HASH as u32) as usize;
+                bucket_starts[bucket] += 1;
+                PreparedEntry {
+                    offset,
+                    name: CaseInsensitiveStr::new(name),
+                    bucket,
+                }
+            })
+            .collect();
 
         let mut sum = 0;
         for start in &mut bucket_starts {
@@ -64,40 +75,43 @@ impl SymbolMap {
             sum += val;
         }
 
+        // Partition in place: each cursor marks the first unfilled slot in its
+        // bucket. A displaced entry is moved directly to its own bucket.
         let mut bucket_cursors = bucket_starts;
-        for (offset, symbol) in mapping {
-            let bucket = hash_v1(symbol.name().unwrap_or_default().as_bytes()) % IPHR_HASH as u32;
-            let cursor = &mut bucket_cursors[bucket as usize];
-            hash_records[*cursor as usize] = IndexRecord::new(*offset);
-            *cursor += 1;
+        for bucket in 0..IPHR_HASH {
+            let end = bucket_starts
+                .get(bucket + 1)
+                .copied()
+                .unwrap_or(mapping.len() as u32);
+            while bucket_cursors[bucket] < end {
+                let index = bucket_cursors[bucket] as usize;
+                let target = entries[index].bucket;
+                if target != bucket {
+                    entries.swap(index, bucket_cursors[target] as usize);
+                }
+                bucket_cursors[target] += 1;
+            }
         }
 
-        // Keep offsets zero-based while looking up names. Only GSI's wire
-        // offsets are one-based; shared-stream and public address-map offsets are not.
+        // Keep offsets zero-based through sorting. Only GSI's wire offsets
+        // are one-based; shared-stream and public address-map offsets are not.
         let mut slice = &bucket_starts[..];
         while let [start, tail @ ..] = slice {
             let end = tail.first().copied().unwrap_or(mapping.len() as u32);
 
-            hash_records[*start as usize..end as usize].sort_by(|lhs, rhs| {
-                let lhs_name = mapping
-                    .get(&lhs.offset())
-                    .and_then(S::name)
-                    .unwrap_or_default();
-                let rhs_name = mapping
-                    .get(&rhs.offset())
-                    .and_then(S::name)
-                    .unwrap_or_default();
-                CaseInsensitiveStr(lhs_name)
-                    .cmp(&CaseInsensitiveStr(rhs_name))
-                    .then_with(|| lhs.offset().cmp(&rhs.offset()))
+            entries[*start as usize..end as usize].sort_unstable_by(|lhs, rhs| {
+                lhs.name
+                    .cmp(&rhs.name)
+                    .then_with(|| lhs.offset.cmp(&rhs.offset))
             });
 
             slice = tail;
         }
 
-        for record in &mut hash_records {
-            record.offset.0 += 1;
-        }
+        let hash_records = entries
+            .into_iter()
+            .map(|entry| IndexRecord::new(SymbolOffset(entry.offset.0 + 1)))
+            .collect();
 
         let (bitmap, buckets) = allocate_buckets(&bucket_starts, mapping.len() as u32);
         Self {
@@ -191,11 +205,6 @@ impl IndexRecord {
             ref_count: 1,
         }
     }
-
-    /// Gets the offset of the index record.
-    pub fn offset(&self) -> SymbolOffset {
-        self.offset
-    }
 }
 
 fn allocate_buckets(bucket_starts: &[u32], size: u32) -> (Bitmap, Vec<u32>) {
@@ -222,6 +231,7 @@ fn allocate_buckets(bucket_starts: &[u32], size: u32) -> (Bitmap, Vec<u32>) {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::cmp::Ordering;
 
     use super::*;
@@ -242,15 +252,21 @@ mod tests {
             ("aZ", "Az", Ordering::Equal),
             ("[", "a", Ordering::Less),
             ("Aé", "aé", Ordering::Less),
+            ("Zz", "é", Ordering::Less),
+            ("é", "Zz", Ordering::Greater),
+            ("Zé", "aé", Ordering::Less),
+            ("Zé", "aab", Ordering::Less),
+            ("aab", "Zé", Ordering::Greater),
+            ("", "", Ordering::Equal),
             ("é", "zz", Ordering::Greater),
             ("é", "aaa", Ordering::Less),
         ] {
             assert_eq!(
-                CaseInsensitiveStr(lhs).cmp(&CaseInsensitiveStr(rhs)),
+                CaseInsensitiveStr::new(lhs).cmp(&CaseInsensitiveStr::new(rhs)),
                 expected
             );
             assert_eq!(
-                CaseInsensitiveStr(lhs) == CaseInsensitiveStr(rhs),
+                CaseInsensitiveStr::new(lhs) == CaseInsensitiveStr::new(rhs),
                 expected == Ordering::Equal
             );
         }
@@ -293,17 +309,17 @@ mod tests {
             let records = &decoded.hash_records[start..end];
             for record in records {
                 assert_eq!(record.ref_count, 1);
-                assert_ne!(record.offset().0, 0);
-                let offset = SymbolOffset(record.offset().0 - 1);
+                assert_ne!(record.offset.0, 0);
+                let offset = SymbolOffset(record.offset.0 - 1);
                 let name = &mapping[&offset].0;
                 assert_eq!(hash_v1(name.as_bytes()) as usize % IPHR_HASH, bucket);
                 seen.push(offset);
             }
             for pair in records.windows(2) {
-                let lhs = SymbolOffset(pair[0].offset().0 - 1);
-                let rhs = SymbolOffset(pair[1].offset().0 - 1);
-                let order = CaseInsensitiveStr(&mapping[&lhs].0)
-                    .cmp(&CaseInsensitiveStr(&mapping[&rhs].0))
+                let lhs = SymbolOffset(pair[0].offset.0 - 1);
+                let rhs = SymbolOffset(pair[1].offset.0 - 1);
+                let order = CaseInsensitiveStr::new(&mapping[&lhs].0)
+                    .cmp(&CaseInsensitiveStr::new(&mapping[&rhs].0))
                     .then(lhs.cmp(&rhs));
                 assert_eq!(order, Ordering::Less);
             }
@@ -315,6 +331,47 @@ mod tests {
         seen.sort_unstable();
         assert_eq!(seen, mapping.keys().copied().collect::<Vec<_>>());
         assert_eq!(next, mapping.len());
+    }
+
+    #[test]
+    fn resolves_each_name_once() {
+        struct CountedName {
+            name: Option<&'static str>,
+            calls: Cell<usize>,
+        }
+
+        impl NamedSymbol for CountedName {
+            fn name(&self) -> Option<&str> {
+                self.calls.set(self.calls.get() + 1);
+                self.name
+            }
+        }
+
+        let mapping = [Some("z"), Some("Z"), Some("z"), Some("Aé"), None, Some("")]
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| {
+                (
+                    SymbolOffset(i as u32 * 20),
+                    CountedName {
+                        name,
+                        calls: Cell::new(0),
+                    },
+                )
+            })
+            .collect();
+        let map = SymbolMap::from_symbols(&mapping);
+        assert_eq!(map.hash_records.len(), mapping.len());
+        let case_variant_offsets: Vec<_> = map
+            .hash_records
+            .iter()
+            .map(|record| record.offset.0)
+            .filter(|&offset| offset <= 41)
+            .collect();
+        assert_eq!(case_variant_offsets, [1, 21, 41]);
+        for symbol in mapping.values() {
+            assert_eq!(symbol.calls.get(), 1);
+        }
     }
 
     #[test]

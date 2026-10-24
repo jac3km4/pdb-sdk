@@ -78,37 +78,31 @@ impl SymbolsBuilder {
     where
         S: io::Write + io::Seek,
     {
-        // Merge by the offsets assigned at insertion, not by symbol kind.
-        let mut records = self.globals;
-        if self
-            .publics
-            .keys()
-            .any(|offset| records.contains_key(offset))
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "public and global records share a symbol offset",
-            )
-            .into());
-        }
-        let mut expected = 0u32;
-        let mut sizes: Vec<_> = records
-            .iter()
-            .map(|(offset, symbol)| {
+        // Both maps are already ordered; validate their merged layout before writing.
+        let sizes = merge_by_offset(
+            self.globals.iter().map(|(offset, symbol)| {
                 (
                     *offset,
                     u16::default_encoded_size(()) + symbol.encoded_size(()),
                 )
-            })
-            .chain(self.publics.iter().map(|(offset, public)| {
+            }),
+            self.publics.iter().map(|(offset, public)| {
                 (
                     *offset,
                     u16::default_encoded_size(()) * 2 + public.encoded_size(()),
                 )
-            }))
-            .collect();
-        sizes.sort_by_key(|(offset, _)| *offset);
-        for (offset, size) in sizes {
+            }),
+        );
+        let mut sizes = sizes.peekable();
+        let mut expected = 0u32;
+        while let Some((offset, size)) = sizes.next() {
+            if sizes.peek().is_some_and(|(next, _)| *next == offset) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "public and global records share a symbol offset",
+                )
+                .into());
+            }
             if offset.0 != expected {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -138,6 +132,7 @@ impl SymbolsBuilder {
                 )
             })?;
         }
+        drop(sizes);
         if expected != self.offset {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -149,7 +144,7 @@ impl SymbolsBuilder {
         // Emit the global index even when empty.
         let globals = {
             let mut globals_stream = DefaultMsfStreamWriter::new(sink)?;
-            Globals::from_symbols(&records).write_with_header(&mut globals_stream)?;
+            Globals::from_symbols(&self.globals).write_with_header(&mut globals_stream)?;
             allocator.allocate(globals_stream.finish()?)
         };
 
@@ -160,10 +155,13 @@ impl SymbolsBuilder {
             allocator.allocate(publics_stream.finish()?)
         };
 
-        // PDB indexes refer to byte offsets; publics need not precede globals.
-        for (offset, public) in self.publics {
-            records.insert(offset, SymbolRecord::Public32(public));
-        }
+        // Consume in offset order without rebuilding either tree.
+        let records = merge_by_offset(
+            self.globals.into_iter(),
+            self.publics
+                .into_iter()
+                .map(|(offset, public)| (offset, SymbolRecord::Public32(public))),
+        );
         let symbols = {
             let mut syms_stream = DefaultMsfStreamWriter::new(sink)?;
             for (_, sym) in records {
@@ -178,6 +176,19 @@ impl SymbolsBuilder {
             symbols,
         })
     }
+}
+
+fn merge_by_offset<T>(
+    left: impl Iterator<Item = (SymbolOffset, T)>,
+    right: impl Iterator<Item = (SymbolOffset, T)>,
+) -> impl Iterator<Item = (SymbolOffset, T)> {
+    let mut left = left.peekable();
+    let mut right = right.peekable();
+    std::iter::from_fn(move || match (left.peek(), right.peek()) {
+        (Some((lhs, _)), Some((rhs, _))) if lhs <= rhs => left.next(),
+        (_, Some(_)) => right.next(),
+        _ => left.next(),
+    })
 }
 
 pub(super) struct SymbolStreams {
@@ -299,6 +310,46 @@ mod tests {
             let (record, _) =
                 PrefixedRecord::<SymbolRecord>::decode_with_size(&mut cursor).unwrap();
             assert!(record.0.name().unwrap().starts_with("public_"));
+        }
+    }
+
+    #[test]
+    fn merged_layouts_preserve_record_order() {
+        for kinds in [
+            &[][..],
+            &[true, true, true][..],
+            &[false, false, false][..],
+            &[true, true, false, false][..],
+            &[false, false, true, true][..],
+            &[true, false, true, false, true][..],
+        ] {
+            let mut builder = SymbolsBuilder::default();
+            let mut expected = Vec::new();
+            for (i, &is_public) in kinds.iter().enumerate() {
+                let name = format!("symbol_{i}");
+                let offset = if is_public {
+                    PublicsBuilder {
+                        symbols: &mut builder,
+                    }
+                    .add(public(&name, 1, i as u32))
+                } else {
+                    builder.add(global(&name))
+                };
+                expected.push((offset, name));
+            }
+            let total = builder.offset;
+            let mut sink = Cursor::new(Vec::new());
+            let mut allocator = StreamAllocator::default();
+            let streams = builder.commit(&mut sink, &mut allocator).unwrap();
+            let bytes = stream_bytes(&mut sink, &allocator, streams.symbols);
+            let mut cursor = Cursor::new(bytes);
+            for (offset, name) in expected {
+                assert_eq!(cursor.position(), u64::from(offset.0));
+                let (record, _) =
+                    PrefixedRecord::<SymbolRecord>::decode_with_size(&mut cursor).unwrap();
+                assert_eq!(record.0.name(), Some(name.as_str()));
+            }
+            assert_eq!(cursor.position(), u64::from(total));
         }
     }
 
