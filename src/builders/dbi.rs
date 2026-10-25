@@ -14,8 +14,9 @@ use crate::{MsfStreamLayout, StreamIndex, codecs, constants};
 ///
 /// The DBI header uses the AMD64 machine type. Section maps, contributions, and
 /// symbol addresses are caller-supplied and are not reconciled automatically.
-/// Module, section-map, and file counts must fit the DBI `u16` fields; these
-/// limits are not checked before writing.
+/// Module and section-map counts must fit the DBI `u16` fields; these limits
+/// are not checked before writing. Per-module source-file counts are checked.
+/// The legacy total source-file count wraps; module counts retain the true total.
 #[derive(Debug, Default)]
 pub struct DbiBuilder {
     pub(super) age: u32,
@@ -198,6 +199,34 @@ mod tests {
 
     use super::*;
     use crate::msf::{DEFAULT_BLOCK_SIZE, MsfStream};
+
+    #[test]
+    fn total_source_count_can_exceed_u16_and_roundtrip() {
+        let mut builder = DbiBuilder::default();
+        for count in [usize::from(u16::MAX), 1] {
+            let contrib = SectionContrib::decode((), &mut &[0; 28][..]).unwrap();
+            let mut module = ModuleBuilder::new("module".into(), "object".into(), contrib);
+            for _ in 0..count {
+                module.add_source_file("source.c".into());
+            }
+            builder.add_module(module);
+        }
+        let mut sink = Cursor::new(Vec::new());
+        let layout = builder
+            .commit(&mut sink, &mut StreamAllocator::default())
+            .unwrap();
+        let mut stream = MsfStream::new(&mut sink, &layout, DEFAULT_BLOCK_SIZE);
+        let decoded = DbiStream::read(&mut stream).unwrap();
+        assert_eq!(decoded.file_info().num_source_files, 0);
+        assert_eq!(decoded.file_info().module_file_counts, [u16::MAX, 1]);
+        assert_eq!(decoded.file_info().file_name_offsets.len(), 65536);
+        assert_eq!(decoded.file_info().file_name_offsets[65535], 65535 * 9);
+        assert_eq!(decoded.file_names().len(), 65536 * 9);
+        assert_eq!(
+            stream.stream_position().unwrap(),
+            u64::from(layout.byte_size)
+        );
+    }
 
     #[test]
     fn file_info_size_and_bytes_are_four_byte_aligned() {

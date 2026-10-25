@@ -4,7 +4,6 @@
 
 use std::{fmt, io};
 
-use declio::util::Bytes;
 use declio::{Decode, Encode, EncodedSize};
 use derive_getters::Getters;
 use modular_bitfield::Specifier;
@@ -39,7 +38,24 @@ impl PdbInfo {
             return Err(Error::UnsupportedFeature("Invalid PDB stream version"));
         }
         let named_streams = NamedStreams::decode((), &mut reader)?;
-        let features = codecs::padded_rem_list::decode(constants::ENDIANESS, &mut reader)?;
+        let mut features = Vec::new();
+        loop {
+            let mut bytes = [0; 4];
+            match reader.read(&mut bytes[..1]) {
+                Ok(0) => break,
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error.into()),
+            }
+            reader.read_exact(&mut bytes[1..])?;
+            // Unknown signatures are extensions, not a reason to reject Info.
+            if let Ok(feature) = PdbFeature::decode((), &mut bytes.as_slice()) {
+                features.push(feature);
+                if feature == PdbFeature::Vc110 {
+                    break;
+                }
+            }
+        }
 
         Ok(Self {
             header,
@@ -68,7 +84,7 @@ pub struct PdbInfoHeader {
 #[derive(Encode, Decode)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct NamedStreams {
-    #[declio(via = "Bytes<'_, u32>")]
+    #[declio(with = "codecs::prefixed_bytes")]
     name_buffer: Vec<u8>,
     offset_index_map: Table,
 }
@@ -151,6 +167,76 @@ impl_bitfield_specifier_codecs!(PdbFeature);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn info_bytes(features: &[u32]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        PdbInfoHeader {
+            version: PdbVersion::Vc70,
+            signature: 0,
+            age: 1,
+            guid: Guid::default(),
+        }
+        .encode((), &mut bytes)
+        .unwrap();
+        NamedStreams {
+            name_buffer: Vec::new(),
+            offset_index_map: Table::default(),
+        }
+        .encode((), &mut bytes)
+        .unwrap();
+        for feature in features {
+            bytes.extend_from_slice(&feature.to_le_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn features_ignore_unknown_signatures_and_stop_at_vc110() {
+        let bytes = info_bytes(&[
+            0xdead_beef,
+            PdbFeature::Vc140 as u32,
+            PdbFeature::NoTypeMerge as u32,
+        ]);
+        assert_eq!(
+            PdbInfo::read(bytes.as_slice()).unwrap().features(),
+            &[PdbFeature::Vc140, PdbFeature::NoTypeMerge]
+        );
+        let bytes = info_bytes(&[
+            PdbFeature::Vc110 as u32,
+            PdbFeature::Vc140 as u32,
+            0xdead_beef,
+        ]);
+        let mut reader = std::io::Cursor::new(&bytes);
+        assert_eq!(
+            PdbInfo::read(&mut reader).unwrap().features(),
+            &[PdbFeature::Vc110]
+        );
+        assert_eq!(reader.position() as usize, bytes.len() - 8);
+    }
+
+    #[test]
+    fn truncated_feature_is_an_error() {
+        let mut bytes = info_bytes(&[]);
+        bytes.push(1);
+        assert!(PdbInfo::read(bytes.as_slice()).is_err());
+    }
+
+    #[test]
+    fn named_streams_reject_untrusted_truncated_extents() {
+        assert!(NamedStreams::decode((), &mut u32::MAX.to_le_bytes().as_slice()).is_err());
+        // Empty name buffer followed by a table declaring a huge present bitmap.
+        let mut bytes = Vec::new();
+        for word in [0u32, 0, 8, u32::MAX] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        assert!(NamedStreams::decode((), &mut bytes.as_slice()).is_err());
+        // Empty bitmaps followed by an impossible packed-entry count.
+        bytes.clear();
+        for word in [0u32, u32::MAX, u32::MAX, 0, 0] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        assert!(NamedStreams::decode((), &mut bytes.as_slice()).is_err());
+    }
 
     #[test]
     fn named_streams_skip_malformed_offsets_names_and_indices() {

@@ -163,9 +163,9 @@ pub enum TypeRecord {
         overriden_vftable: Option<TypeIndex>,
         /// Offset of the virtual function pointer.
         vfptr_offset: u32,
-        /// Number of names.
-        name_count: u32,
-        // todo method_names
+        /// Vtable name followed by method names, prefixed by their total byte length.
+        #[declio(with = "vftable_names")]
+        names: Vec<StrBuf>,
     },
     #[declio(id = "constants::LF_VTSHAPE.into()")]
     /// Describes the shape of a virtual function table.
@@ -277,6 +277,54 @@ pub enum TypeRecord {
         #[declio(with = "codecs::padded_rem_list")]
         methods: Vec<MethodListEntry>,
     },
+}
+
+// LF_VFTABLE's prefix counts bytes, including each string's NUL terminator,
+// not strings. Limit reads without allocating from an untrusted wire length.
+mod vftable_names {
+    use std::io::Read;
+
+    use super::*;
+
+    pub fn decode<Ctx: Copy, R: Read>(
+        ctx: Ctx,
+        reader: &mut R,
+    ) -> Result<Vec<StrBuf>, declio::Error> {
+        let len = u32::decode(constants::ENDIANESS, reader)?;
+        let mut payload = reader.take(u64::from(len));
+        let mut names = Vec::new();
+        while payload.limit() != 0 {
+            names.push(StrBuf::decode(ctx, &mut payload)?);
+        }
+        Ok(names)
+    }
+
+    pub fn encode<Ctx: Copy, W: std::io::Write>(
+        names: &[StrBuf],
+        ctx: Ctx,
+        writer: &mut W,
+    ) -> Result<(), declio::Error> {
+        let mut len = 0u32;
+        for name in names {
+            if name.as_ref().contains('\0') {
+                return Err(declio::Error::new("VFTABLE name contains NUL"));
+            }
+            let size = u32::try_from(name.encoded_size(ctx))
+                .map_err(|_| declio::Error::new("VFTABLE names exceed u32 length"))?;
+            len = len
+                .checked_add(size)
+                .ok_or_else(|| declio::Error::new("VFTABLE names exceed u32 length"))?;
+        }
+        len.encode(constants::ENDIANESS, writer)?;
+        codecs::rem_list::encode(names, ctx, writer)
+    }
+
+    pub fn encoded_size<Ctx: Copy>(names: &[StrBuf], ctx: Ctx) -> usize {
+        4 + names
+            .iter()
+            .map(|name| name.encoded_size(ctx))
+            .sum::<usize>()
+    }
 }
 
 #[derive(Debug, Encode, Decode, EncodedSize)]
@@ -399,8 +447,8 @@ pub struct StructRecord2 {
     /// VTable shape type index.
     #[declio(with = "codecs::optional_index")]
     pub vtable_shape: Option<TypeIndex>,
-    /// Number of members.
-    pub member_count: u16,
+    /// Number of members, encoded as a numeric leaf.
+    pub member_count: Integer,
     /// Size in bytes.
     pub size: Integer,
     /// Name of the struct.
@@ -493,6 +541,131 @@ pub struct MethodListEntry {
     /// Vtable offset, encoded only for introducing virtual methods.
     #[declio(skip_if = "!properties.method_kind().is_introducing()")]
     pub vtable_offset: Option<u32>,
+}
+
+#[cfg(test)]
+mod wire_layout_tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    fn assert_wire(record: &TypeRecord, expected: &[u8]) {
+        let mut encoded = Vec::new();
+        record.encode((), &mut encoded).unwrap();
+        assert_eq!(encoded, expected);
+        assert_eq!(record.encoded_size(()), expected.len());
+    }
+
+    #[test]
+    fn v2_member_count_is_a_numeric_leaf() {
+        for kind in [0x1608u16, 0x1609, 0x160a] {
+            for (count_bytes, expected_count) in [
+                (&[0xff, 0x7f][..], 0x7fff),
+                (&[0x02, 0x80, 0x00, 0x80][..], 0x8000),
+                (&[0x04, 0x80, 0x00, 0x00, 0x01, 0x00][..], 0x10000),
+            ] {
+                let mut bytes = kind.to_le_bytes().to_vec();
+                bytes.extend_from_slice(&[
+                    0x00, 0x02, 0x00, 0x00, // properties: unique name
+                    0x01, 0x10, 0x00, 0x00, // field list
+                    0x02, 0x10, 0x00, 0x00, // derivation list
+                    0x03, 0x10, 0x00, 0x00, // vtable shape
+                ]);
+                bytes.extend_from_slice(count_bytes);
+                bytes.extend_from_slice(b"\x08\x00C\0.?AVC@@\0");
+                let mut reader = Cursor::new(&bytes);
+                let record = TypeRecord::decode((), &mut reader).unwrap();
+                assert_eq!(reader.position(), bytes.len() as u64);
+                let (TypeRecord::Class2(body)
+                | TypeRecord::Struct2(body)
+                | TypeRecord::Interface2(body)) = &record
+                else {
+                    panic!("expected a V2 class record");
+                };
+                assert!(
+                    matches!(body.member_count, Integer::U16(n) if u32::from(n) == expected_count)
+                        || matches!(body.member_count, Integer::U32(n) if n == expected_count)
+                );
+                assert_eq!(u32::from(body.field_list.unwrap()), 0x1001);
+                assert_eq!(u32::from(body.derivation_list.unwrap()), 0x1002);
+                assert_eq!(u32::from(body.vtable_shape.unwrap()), 0x1003);
+                assert!(matches!(body.size, Integer::U16(8)));
+                assert_eq!(body.name.as_ref(), "C");
+                assert_eq!(body.unique_name.as_ref(), ".?AVC@@");
+                assert_wire(&record, &bytes);
+                for end in 0..bytes.len() {
+                    assert!(TypeRecord::decode((), &mut &bytes[..end]).is_err());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn vftable_names_have_a_byte_length_and_stay_bounded() {
+        let bytes = b"\x1d\x15\x01\x10\0\0\x02\x10\0\0\x08\0\0\0\x0b\0\0\0vt\0foo\0bar\0";
+        let mut input = bytes.to_vec();
+        input.extend_from_slice(&[0xf2, 0xf1, 0xaa]);
+        let mut reader = Cursor::new(input);
+        let record = TypeRecord::decode((), &mut reader).unwrap();
+        assert_eq!(reader.position(), bytes.len() as u64);
+        let TypeRecord::VFTable {
+            complete_class,
+            overriden_vftable,
+            vfptr_offset,
+            names,
+        } = &record
+        else {
+            panic!("expected VFTABLE");
+        };
+        assert_eq!(u32::from(*complete_class), 0x1001);
+        assert_eq!(u32::from(overriden_vftable.unwrap()), 0x1002);
+        assert_eq!(*vfptr_offset, 8);
+        assert_eq!(
+            names.iter().map(AsRef::as_ref).collect::<Vec<&str>>(),
+            ["vt", "foo", "bar"]
+        );
+        assert_wire(&record, bytes);
+        for end in 0..bytes.len() {
+            assert!(TypeRecord::decode((), &mut &bytes[..end]).is_err());
+        }
+        // A terminator outside the declared payload must not complete a name.
+        let mut unterminated = bytes.to_vec();
+        unterminated[14] = 10;
+        let mut reader = Cursor::new(unterminated);
+        assert!(TypeRecord::decode((), &mut reader).is_err());
+        assert_eq!(reader.position(), (bytes.len() - 1) as u64);
+        let mut excessive = bytes.to_vec();
+        excessive[14..18].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(TypeRecord::decode((), &mut excessive.as_slice()).is_err());
+    }
+
+    #[test]
+    fn vftable_empty_names_and_embedded_nuls() {
+        for names in [vec![], vec![StrBuf::from("")]] {
+            let record = TypeRecord::VFTable {
+                complete_class: TypeIndex::try_from(0x1001).unwrap(),
+                overriden_vftable: None,
+                vfptr_offset: 0,
+                names,
+            };
+            let mut bytes = vec![0x1d, 0x15, 1, 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            let TypeRecord::VFTable { names, .. } = &record else {
+                unreachable!()
+            };
+            bytes.extend_from_slice(&(names.len() as u32).to_le_bytes());
+            bytes.extend(std::iter::repeat_n(0, names.len()));
+            assert_wire(&record, &bytes);
+            let mut reader = Cursor::new(&bytes);
+            let TypeRecord::VFTable { names: decoded, .. } =
+                TypeRecord::decode((), &mut reader).unwrap()
+            else {
+                unreachable!()
+            };
+            assert_eq!(decoded.len(), names.len());
+            assert_eq!(reader.position(), bytes.len() as u64);
+        }
+        assert!(vftable_names::encode(&[StrBuf::from("bad\0name")], (), &mut Vec::new()).is_err());
+    }
 }
 
 #[cfg(test)]

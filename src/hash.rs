@@ -9,7 +9,7 @@ use std::fmt;
 use declio::ctx::Len;
 use declio::{Decode, Encode};
 
-use crate::constants;
+use crate::{codecs, constants};
 
 /// Serialized bucket state and packed 32-bit key/value entries.
 #[derive(Encode, Decode)]
@@ -19,7 +19,7 @@ pub(crate) struct Table {
     cap: u32,
     present: BitVector,
     deleted: BitVector,
-    #[declio(ctx = "Len(*size as usize)")]
+    #[declio(ctx = "(Len(*size as usize), ())", with = "codecs::fixed_list")]
     entries: Vec<KeyVal>,
 }
 
@@ -108,7 +108,7 @@ impl KeyVal {
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct BitVector {
     words: u32,
-    #[declio(ctx = "Len(*words as usize * 4)")]
+    #[declio(ctx = "u64::from(*words) * 4", with = "codecs::sized_bytes")]
     buf: Vec<u8>,
 }
 

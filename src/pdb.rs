@@ -82,6 +82,14 @@ where
             layouts.push(MsfStreamLayout::new(blocks, byte_size));
         }
 
+        if remaining != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "MSF directory contains unexplained bytes",
+            )
+            .into());
+        }
+
         let res = Self {
             inner: reader,
             layouts,
@@ -343,6 +351,21 @@ mod tests {
             write_u32(&mut bytes, 32, block_size);
             assert!(PdbFile::open(Cursor::new(bytes)).is_err());
         }
+    }
+
+    #[test]
+    fn rejects_unaligned_or_unconsumed_directory_bytes() {
+        for size in [13, 16] {
+            let mut bytes = container();
+            write_u32(&mut bytes, 44, size);
+            assert!(PdbFile::open(Cursor::new(bytes)).is_err());
+        }
+        // Bytes outside the directory's declared extent are block padding.
+        let mut bytes = container();
+        write_u32(&mut bytes, DIRECTORY_OFFSET + 12, u32::MAX);
+        let pdb = PdbFile::open(Cursor::new(bytes)).unwrap();
+        assert_eq!(pdb.layouts[0].byte_size, 4);
+        assert_eq!(pdb.layouts[0].blocks[0].0, 1);
     }
 
     #[test]

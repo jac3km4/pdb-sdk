@@ -205,7 +205,10 @@ impl<Ctx: Copy> Decode<Ctx> for Integer {
     {
         match u16::decode(constants::ENDIANESS, reader)? {
             val if val < constants::LF_NUMERIC => Ok(Integer::U16(val)),
-            constants::LF_CHAR => Ok(Integer::U8(u8::decode(constants::ENDIANESS, reader)?)),
+            constants::LF_CHAR => Ok(Integer::I16(i16::from(i8::decode(
+                constants::ENDIANESS,
+                reader,
+            )?))),
             constants::LF_SHORT => Ok(Integer::I16(i16::decode(constants::ENDIANESS, reader)?)),
             constants::LF_USHORT => Ok(Integer::U16(u16::decode(constants::ENDIANESS, reader)?)),
             constants::LF_LONG => Ok(Integer::I32(i32::decode(constants::ENDIANESS, reader)?)),
@@ -317,6 +320,22 @@ mod tests {
             assert_eq!(value(&decoded), value(integer));
             assert_eq!(reader.position(), expected.len() as u64);
         }
+    }
+
+    #[test]
+    fn char_numeric_leaf_is_signed() {
+        for (byte, expected) in [(0x80, -128), (0xff, -1), (0, 0), (0x7f, 127)] {
+            let bytes = [0x00, 0x80, byte, 0xaa];
+            let mut reader = Cursor::new(bytes);
+            let decoded = Integer::decode((), &mut reader).unwrap();
+            assert!(matches!(decoded, Integer::I16(i) if i == expected));
+            assert_eq!(reader.position(), 3);
+            let mut encoded = Vec::new();
+            decoded.encode((), &mut encoded).unwrap();
+            assert_eq!(encoded, [0x01, 0x80, expected as u8, (expected >> 8) as u8]);
+            assert_eq!(decoded.encoded_size(()), encoded.len());
+        }
+        assert!(Integer::decode((), &mut &[0x00, 0x80][..]).is_err());
     }
 
     #[test]

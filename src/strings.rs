@@ -3,13 +3,12 @@
 use std::fmt;
 use std::io::Write;
 
-use declio::util::{Bytes, PrefixVec};
 use declio::{Decode, Encode, EncodedSize, magic_bytes};
 use modular_bitfield::Specifier;
 
 use crate::hash::hash_v1;
 use crate::result::Result;
-use crate::{StringOffset, constants, impl_bitfield_specifier_codecs};
+use crate::{StringOffset, codecs, constants, impl_bitfield_specifier_codecs};
 
 magic_bytes! {
     #[derive(Debug)]
@@ -26,9 +25,9 @@ magic_bytes! {
 pub struct Strings {
     signature: StringsSignature,
     hash_version: HashVersion,
-    #[declio(via = "Bytes<'_, u32>")]
+    #[declio(with = "codecs::prefixed_bytes")]
     bytes: Vec<u8>,
-    #[declio(via = "PrefixVec<'_, u32, u32>")]
+    #[declio(with = "codecs::counted_u32")]
     ids: Vec<u32>,
     name_count: u32,
 }
@@ -143,6 +142,17 @@ impl_bitfield_specifier_codecs!(HashVersion);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn truncated_huge_string_regions_and_bucket_counts_return_errors() {
+        for words in [
+            vec![0xeffe_effe, 1, u32::MAX],
+            vec![0xeffe_effe, 1, 0, u32::MAX],
+        ] {
+            let bytes: Vec<_> = words.into_iter().flat_map(u32::to_le_bytes).collect();
+            assert!(Strings::decode((), &mut bytes.as_slice()).is_err());
+        }
+    }
 
     #[test]
     fn builder_inserts_collisions_with_wraparound() {

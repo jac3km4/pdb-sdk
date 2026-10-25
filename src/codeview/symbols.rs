@@ -329,6 +329,8 @@ pub enum SymbolRecord {
         properties: DefRangeRegisterRelProperties,
         /// Base pointer offset.
         base_pointer_offset: i32,
+        /// Offset within the indirect user-defined type.
+        offset_in_udt: i32,
         /// Range where the variable is valid.
         range: LocalVariableRange,
         /// Gaps in the variable's validity.
@@ -591,6 +593,8 @@ pub enum SymbolRecord {
         flags: u16,
         /// Associated data (interpretation is producer-specific).
         data: u32,
+        /// Segment of the associated data.
+        segment: u16,
     },
     /// Constant value live at function entry.
     #[declio(id = "constants::S_DEFRANGE_CONSTVAL_ON_ENTRY.into()")]
@@ -649,6 +653,86 @@ impl SymbolRecord {
                 Some(tls.name.as_ref())
             }
             _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod wire_layout_tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    fn assert_wire(record: &SymbolRecord, expected: &[u8]) {
+        let mut encoded = Vec::new();
+        record.encode((), &mut encoded).unwrap();
+        assert_eq!(encoded, expected);
+        assert_eq!(record.encoded_size(()), expected.len());
+    }
+
+    #[test]
+    fn indirect_register_range_includes_signed_udt_offset() {
+        let bytes = [
+            0x77, 0x11, // S_DEFRANGE_REGISTER_REL_INDIR
+            0x11, 0x00, // register
+            0x21, 0x00, // properties
+            0xf0, 0xff, 0xff, 0xff, // base pointer offset: -16
+            0xf8, 0xff, 0xff, 0xff, // OffsetInUdt: -8
+            0x78, 0x56, 0x34, 0x12, // range start
+            0x03, 0x00, 0x40, 0x00, // section, range length
+            0x04, 0x00, 0x02, 0x00, // gap
+        ];
+        let mut reader = Cursor::new(bytes);
+        let record = SymbolRecord::decode((), &mut reader).unwrap();
+        assert_eq!(reader.position(), bytes.len() as u64);
+        let SymbolRecord::DefRangeRegisterRelIndirect {
+            base_pointer_offset,
+            offset_in_udt,
+            range,
+            gaps,
+            ..
+        } = &record
+        else {
+            panic!("expected indirect definition range")
+        };
+        assert_eq!(*base_pointer_offset, -16);
+        assert_eq!(*offset_in_udt, -8);
+        assert_eq!(range.offset_start, 0x1234_5678);
+        assert_eq!(range.i_sect_start, 3);
+        assert_eq!(range.range, 0x40);
+        assert_eq!(gaps.len(), 1);
+        assert_eq!(gaps[0].gap_start_offset, 4);
+        assert_eq!(gaps[0].range, 2);
+        assert_wire(&record, &bytes);
+        // With no gaps, all fixed fields must still be present.
+        for end in 0..22 {
+            assert!(SymbolRecord::decode((), &mut &bytes[..end]).is_err());
+        }
+        let mut reader = Cursor::new(&bytes[..22]);
+        let record = SymbolRecord::decode((), &mut reader).unwrap();
+        assert_eq!(reader.position(), 22);
+        assert_wire(&record, &bytes[..22]);
+    }
+
+    #[test]
+    fn association_includes_segment() {
+        let bytes = [0x7c, 0x11, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12, 0xbc, 0x9a];
+        let mut input = bytes.to_vec();
+        input.push(0xaa);
+        let mut reader = Cursor::new(input);
+        let record = SymbolRecord::decode((), &mut reader).unwrap();
+        assert_eq!(reader.position(), bytes.len() as u64);
+        assert!(matches!(
+            record,
+            SymbolRecord::Association {
+                flags: 0x1234,
+                data: 0x1234_5678,
+                segment: 0x9abc
+            }
+        ));
+        assert_wire(&record, &bytes);
+        for end in 0..bytes.len() {
+            assert!(SymbolRecord::decode((), &mut &bytes[..end]).is_err());
         }
     }
 }

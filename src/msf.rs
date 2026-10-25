@@ -68,6 +68,7 @@ impl SuperBlock {
             return Err(invalid("invalid MSF metadata block reference").into());
         }
         if self.num_dir_bytes < 4
+            || !self.num_dir_bytes.is_multiple_of(4)
             || u64::from(self.block_map_blocks()) * 4 > u64::from(self.block_size)
         {
             return Err(invalid("invalid MSF directory size").into());

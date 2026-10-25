@@ -4,7 +4,102 @@
 //! containing record or region. PDB numeric fields use little-endian encoding;
 //! see LLVM's [PDB documentation](https://llvm.org/docs/PDB/index.html).
 
+use std::io::Read;
+
 pub use declio::util::byte_array;
+
+/// Reads only bytes actually supplied, without reserving an untrusted extent.
+pub(crate) fn read_bytes<R: std::io::Read>(
+    reader: &mut R,
+    size: u64,
+) -> Result<Vec<u8>, declio::Error> {
+    let mut region = reader.take(size);
+    let mut bytes = Vec::new();
+    let mut scratch = [0; 8192];
+    while region.limit() != 0 {
+        let count = match region.read(&mut scratch) {
+            Ok(0) => return Err(declio::Error::new("truncated byte region")),
+            Ok(count) => count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error.into()),
+        };
+        bytes
+            .try_reserve(count)
+            .map_err(|_| declio::Error::new("byte region allocation failed"))?;
+        bytes.extend_from_slice(&scratch[..count]);
+    }
+    Ok(bytes)
+}
+
+/// A byte region whose size is supplied by its containing header.
+pub(crate) mod sized_bytes {
+    pub fn decode<R: std::io::Read>(size: u64, reader: &mut R) -> Result<Vec<u8>, declio::Error> {
+        super::read_bytes(reader, size)
+    }
+
+    pub fn encode<W: std::io::Write>(
+        bytes: &[u8],
+        _: u64,
+        writer: &mut W,
+    ) -> Result<(), declio::Error> {
+        writer.write_all(bytes)?;
+        Ok(())
+    }
+}
+
+/// A u32-length-prefixed byte region, allocated incrementally on decode.
+pub(crate) mod prefixed_bytes {
+    use declio::{Decode, Encode};
+
+    pub fn decode<Ctx, R: std::io::Read>(_: Ctx, reader: &mut R) -> Result<Vec<u8>, declio::Error> {
+        let size = u32::decode(crate::constants::ENDIANESS, reader)?;
+        super::read_bytes(reader, u64::from(size))
+    }
+
+    pub fn encode<Ctx, W: std::io::Write>(
+        bytes: &[u8],
+        _: Ctx,
+        writer: &mut W,
+    ) -> Result<(), declio::Error> {
+        let size = u32::try_from(bytes.len())
+            .map_err(|_| declio::Error::new("byte region exceeds u32 length"))?;
+        size.encode(crate::constants::ENDIANESS, writer)?;
+        writer.write_all(bytes)?;
+        Ok(())
+    }
+
+    pub fn encoded_size<Ctx>(bytes: &[u8], _: Ctx) -> usize {
+        4 + bytes.len()
+    }
+}
+
+/// Fixed-count elements allocated only after each element decodes successfully.
+pub(crate) mod fixed_list {
+    use declio::ctx::Len;
+    use declio::{Decode, Encode};
+
+    pub fn decode<T: Decode<Ctx>, Ctx: Copy, R: std::io::Read>(
+        (Len(count), ctx): (Len, Ctx),
+        reader: &mut R,
+    ) -> Result<Vec<T>, declio::Error> {
+        let mut records = Vec::new();
+        for _ in 0..count {
+            records.push(T::decode(ctx, reader)?);
+        }
+        Ok(records)
+    }
+
+    pub fn encode<T: Encode<Ctx>, Ctx: Copy, W: std::io::Write>(
+        records: &[T],
+        (_, ctx): (Len, Ctx),
+        writer: &mut W,
+    ) -> Result<(), declio::Error> {
+        for record in records {
+            record.encode(ctx, writer)?;
+        }
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod tests {

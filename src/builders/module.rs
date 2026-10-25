@@ -78,6 +78,12 @@ impl ModuleBuilder {
     where
         S: io::Write + io::Seek,
     {
+        let num_files = u16::try_from(self.source_files.len())
+            .map_err(|_| declio::Error::new("module source-file count exceeds u16"))?;
+        if self.name.contains('\0') || self.obj_file_name.contains('\0') {
+            return Err(declio::Error::new("module and object names must not contain NUL").into());
+        }
+
         let mut dbg_stream = DefaultMsfStreamWriter::new(sink)?;
         let layout = Module::new(self.symbols, self.debug_entries).write(&mut dbg_stream)?;
         let debug_info_stream = allocator.allocate(dbg_stream.finish()?);
@@ -89,7 +95,7 @@ impl ModuleBuilder {
             type_server_index: 0,
             debug_info_stream,
             layout,
-            num_files: self.source_files.len() as u16,
+            num_files,
             pad1: Default::default(),
             file_names_offs: 0,
             src_file_name_ni: 0,
@@ -102,5 +108,48 @@ impl ModuleBuilder {
             obj_file_name: StrBuf::new(self.obj_file_name),
         };
         Ok((res, self.source_files))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use declio::Decode;
+
+    use super::*;
+
+    fn builder(name: &str, object: &str) -> ModuleBuilder {
+        let contrib = SectionContrib::decode((), &mut &[0; 28][..]).unwrap();
+        ModuleBuilder::new(name.into(), object.into(), contrib)
+    }
+
+    #[test]
+    fn commit_rejects_embedded_nul_names_before_writing() {
+        for (name, object) in [("mod\0ule", "object"), ("module", "obj\0ect")] {
+            let mut sink = Cursor::new(Vec::new());
+            assert!(
+                builder(name, object)
+                    .commit(&mut sink, &mut StreamAllocator::default())
+                    .is_err()
+            );
+            assert!(sink.into_inner().is_empty());
+        }
+    }
+
+    #[test]
+    fn commit_checks_per_module_source_count_without_truncation() {
+        for count in [usize::from(u16::MAX), usize::from(u16::MAX) + 1] {
+            let mut module = builder("module", "object");
+            module.source_files = vec![String::new(); count];
+            let mut sink = Cursor::new(Vec::new());
+            let result = module.commit(&mut sink, &mut StreamAllocator::default());
+            if count == usize::from(u16::MAX) {
+                assert_eq!(result.unwrap().0.header.num_files, u16::MAX);
+            } else {
+                assert!(result.is_err());
+                assert!(sink.into_inner().is_empty());
+            }
+        }
     }
 }

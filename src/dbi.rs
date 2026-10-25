@@ -6,7 +6,6 @@
 use std::io::{self, Read};
 
 use declio::ctx::Len;
-use declio::util::Bytes;
 use declio::{Decode, Encode, EncodedSize, magic_bytes};
 use derive_getters::Getters;
 use modular_bitfield::bitfield;
@@ -54,6 +53,7 @@ impl DbiStream {
 
         let mut modi_stream = reader.by_ref().take(header.modi_stream_size.into());
         let modules = codecs::padded_rem_list::decode((), &mut modi_stream)?;
+        require_consumed(modi_stream.limit())?;
 
         let mut sect_contr_stream = reader.by_ref().take(header.sec_contr_stream_size.into());
         let mut section_contribs = vec![];
@@ -79,7 +79,7 @@ impl DbiStream {
                 entries: vec![],
             }
         };
-        debug_assert_eq!(sec_map_stream.limit(), 0);
+        require_consumed(sec_map_stream.limit())?;
 
         let mut file_info_stream = reader.by_ref().take(header.file_info_size.into());
         let file_info = if file_info_stream.limit() > 0 {
@@ -95,22 +95,24 @@ impl DbiStream {
         };
 
         let mut file_names = vec![];
-        file_info_stream.read_to_end(&mut file_names)?;
-        debug_assert_eq!(file_info_stream.limit(), 0);
+        read_incrementally(&mut file_info_stream, &mut file_names)?;
+        require_consumed(file_info_stream.limit())?;
 
-        let type_server_stream: Bytes<'_> =
-            Decode::decode(Len(header.type_server_size as usize), &mut reader)?;
-
-        let mut ec_bytes = vec![0u8; header.ec_stream_size as usize];
-        reader.read_exact(&mut ec_bytes)?;
+        let type_server_stream = read_substream(&mut reader, header.type_server_size)?;
+        let ec_bytes = read_substream(&mut reader, header.ec_stream_size)?;
         let ec_stream = if ec_bytes.len() >= 4 && ec_bytes[0..4] == 0xEFFE_EFFE_u32.to_le_bytes() {
-            Strings::decode((), &mut ec_bytes.as_slice())?
+            let mut bytes = ec_bytes.as_slice();
+            let strings = Strings::decode((), &mut bytes)?;
+            require_consumed(bytes.len() as u64)?;
+            strings
         } else {
             Strings::empty()
         };
 
-        let dbg_stream_count = header.optional_db_header_size as usize / 2;
-        let dbg_streams: Vec<StreamIndex> = Decode::decode(Len(dbg_stream_count), &mut reader)?;
+        if !header.optional_db_header_size.is_multiple_of(2) {
+            return Err(declio::Error::new("DBI debug header has a partial stream index").into());
+        }
+        let dbg_streams = read_records(&mut reader, header.optional_db_header_size / 2)?;
 
         let dbi = DbiStream {
             header,
@@ -119,12 +121,84 @@ impl DbiStream {
             sec_map,
             file_info,
             file_names,
-            type_server_stream: type_server_stream.into_vec(),
+            type_server_stream,
             ec_stream,
             dbg_streams,
         };
 
         Ok(dbi)
+    }
+}
+
+// Read into a fixed scratch buffer first: neither `Read` nor a declared DBI size
+// guarantees the bytes exist, so allocation must follow successful reads.
+fn read_incrementally<R: Read>(reader: &mut R, bytes: &mut Vec<u8>) -> io::Result<()> {
+    let mut scratch = [0; 8192];
+    loop {
+        match reader.read(&mut scratch) {
+            Ok(0) => return Ok(()),
+            Ok(count) => bytes.extend_from_slice(&scratch[..count]),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn require_consumed(remaining: u64) -> Result<()> {
+    if remaining != 0 {
+        return Err(declio::Error::new("DBI substream size does not match its contents").into());
+    }
+    Ok(())
+}
+
+fn read_substream<R: Read>(reader: &mut R, size: u32) -> Result<Vec<u8>> {
+    let mut stream = reader.take(u64::from(size));
+    let mut bytes = Vec::new();
+    read_incrementally(&mut stream, &mut bytes)?;
+    require_consumed(stream.limit())?;
+    Ok(bytes)
+}
+
+fn read_records<T: Decode, R: Read>(reader: &mut R, count: u32) -> Result<Vec<T>> {
+    let mut records = Vec::new();
+    for _ in 0..count {
+        records.push(T::decode((), reader)?);
+    }
+    Ok(records)
+}
+
+// Unlike a count-sized allocation, this also bounds memory use on truncated
+// generic readers whose declared record count cannot be checked up front.
+mod incremental_list {
+    use super::*;
+
+    pub fn decode<T: Decode<Ctx>, Ctx: Copy, R: Read>(
+        (Len(count), ctx): (Len, Ctx),
+        reader: &mut R,
+    ) -> std::result::Result<Vec<T>, declio::Error> {
+        let mut records = Vec::new();
+        for _ in 0..count {
+            records.push(T::decode(ctx, reader)?);
+        }
+        Ok(records)
+    }
+
+    pub fn encode<T: Encode<Ctx>, Ctx: Copy, W: io::Write>(
+        records: &[T],
+        (_, ctx): (Len, Ctx),
+        writer: &mut W,
+    ) -> std::result::Result<(), declio::Error> {
+        for record in records {
+            record.encode(ctx, writer)?;
+        }
+        Ok(())
+    }
+
+    pub fn encoded_size<T: EncodedSize<Ctx>, Ctx: Copy>(
+        records: &[T],
+        (_, ctx): (Len, Ctx),
+    ) -> usize {
+        records.iter().map(|record| record.encoded_size(ctx)).sum()
     }
 }
 
@@ -312,7 +386,7 @@ pub struct SectionMap {
     /// Number of logical segment descriptors.
     pub sec_count_log: u16,
     /// Array of segment descriptors.
-    #[declio(ctx = "Len(*sec_count as usize)")]
+    #[declio(with = "incremental_list", ctx = "(Len(*sec_count as usize), ())")]
     pub entries: Vec<SectionMapEntry>,
 }
 
@@ -341,8 +415,8 @@ pub struct SectionMapEntry {
 /// Source-file contributions grouped by module.
 ///
 /// Filename offsets refer to [`DbiStream::file_names`], not the `/names` stream.
-/// This decoder sizes the offset array from the 16-bit `num_source_files` field;
-/// it does not handle larger lists whose true count is the sum of module counts.
+/// The offset array's true count is the sum of module counts, not the legacy
+/// 16-bit `num_source_files` field.
 #[derive(Debug, Encode, Decode, EncodedSize)]
 #[declio(ctx_is = "constants::ENDIANESS")]
 pub struct FileInfo {
@@ -351,13 +425,22 @@ pub struct FileInfo {
     /// Legacy 16-bit source-file count; may not reflect the full contribution count.
     pub num_source_files: u16,
     /// Array of module indices.
-    #[declio(ctx = "(Len(*num_modules as usize), constants::ENDIANESS)")]
+    #[declio(
+        with = "incremental_list",
+        ctx = "(Len(*num_modules as usize), constants::ENDIANESS)"
+    )]
     pub module_indicies: Vec<u16>,
     /// Array of integers, containing the number of source files contributing to each module.
-    #[declio(ctx = "(Len(*num_modules as usize), constants::ENDIANESS)")]
+    #[declio(
+        with = "incremental_list",
+        ctx = "(Len(*num_modules as usize), constants::ENDIANESS)"
+    )]
     pub module_file_counts: Vec<u16>,
     /// Byte offsets into the DBI filename buffer, pointing to NUL-terminated names.
-    #[declio(ctx = "(Len(*num_source_files as usize), constants::ENDIANESS)")]
+    #[declio(
+        with = "incremental_list",
+        ctx = "(Len(module_file_counts.iter().map(|&count| usize::from(count)).sum()), constants::ENDIANESS)"
+    )]
     pub file_name_offsets: Vec<u32>,
 }
 
@@ -417,9 +500,11 @@ impl SectionHeaderStream {
     const ENTRY_SIZE: u32 = 40;
 
     pub(crate) fn read<R: io::Read + io::Seek>(mut reader: BufMsfStream<'_, R>) -> Result<Self> {
-        let count = reader.get_ref().length() / Self::ENTRY_SIZE;
-        let records = Decode::decode(Len(count as usize), &mut reader)?;
-        debug_assert!(reader.get_ref().is_eof());
+        let size = reader.get_ref().length();
+        if !size.is_multiple_of(Self::ENTRY_SIZE) {
+            return Err(declio::Error::new("partial section-header record").into());
+        }
+        let records = read_records(&mut reader, size / Self::ENTRY_SIZE)?;
         Ok(Self { headers: records })
     }
 }
@@ -450,9 +535,11 @@ impl FpoStream {
     const ENTRY_SIZE: u32 = 16;
 
     pub(crate) fn read<R: io::Read + io::Seek>(mut reader: BufMsfStream<'_, R>) -> Result<Self> {
-        let count = reader.get_ref().length() / Self::ENTRY_SIZE;
-        let records = Decode::decode(Len(count as usize), &mut reader)?;
-        debug_assert!(reader.get_ref().is_eof());
+        let size = reader.get_ref().length();
+        if !size.is_multiple_of(Self::ENTRY_SIZE) {
+            return Err(declio::Error::new("partial FPO record").into());
+        }
+        let records = read_records(&mut reader, size / Self::ENTRY_SIZE)?;
         Ok(Self { records })
     }
 }
@@ -491,14 +578,162 @@ impl FrameDataStream {
     const ENTRY_SIZE: u32 = 32;
 
     pub(crate) fn read<R: io::Read + io::Seek>(mut reader: BufMsfStream<'_, R>) -> Result<Self> {
-        if !reader.get_ref().length().is_multiple_of(Self::ENTRY_SIZE) {
-            // reloc_ptr
-            u32::decode(constants::ENDIANESS, &mut reader)?;
+        let size = reader.get_ref().length();
+        match size % Self::ENTRY_SIZE {
+            0 => (),
+            4 => {
+                // Optional relocation pointer precedes the frame records.
+                u32::decode(constants::ENDIANESS, &mut reader)?;
+            }
+            _ => return Err(declio::Error::new("partial frame-data record").into()),
         }
-        let count = reader.get_ref().length() / Self::ENTRY_SIZE;
-        let frames = Decode::decode(Len(count as usize), &mut reader)?;
-        debug_assert!(reader.get_ref().is_eof());
+        let frames = read_records(&mut reader, size / Self::ENTRY_SIZE)?;
         Ok(Self { frames })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{BufReader, Cursor};
+
+    use super::*;
+    use crate::msf::{BlockIndex, MsfStream, MsfStreamLayout};
+
+    fn empty_header() -> DbiHeader {
+        let mut bytes = [0; 64];
+        bytes[..4].copy_from_slice(&(-1i32).to_le_bytes());
+        bytes[4..8].copy_from_slice(&(DbiVersion::V70 as u32).to_le_bytes());
+        DbiHeader::decode((), &mut bytes.as_slice()).unwrap()
+    }
+
+    fn encode_stream(header: &DbiHeader, payload: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        header.encode((), &mut bytes).unwrap();
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
+    // This reader has no Seek/length API and refuses oversized read requests.
+    struct ShortReader<'a>(&'a [u8]);
+
+    impl Read for ShortReader<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            assert!(buffer.len() <= 8192);
+            self.0.read(buffer)
+        }
+    }
+
+    #[test]
+    fn huge_declared_substreams_on_short_generic_readers_return_errors() {
+        for field in 0..7 {
+            let mut header = empty_header();
+            let size = match field {
+                0 => &mut header.modi_stream_size,
+                1 => &mut header.sec_contr_stream_size,
+                2 => &mut header.section_map_size,
+                3 => &mut header.file_info_size,
+                4 => &mut header.type_server_size,
+                5 => &mut header.ec_stream_size,
+                _ => &mut header.optional_db_header_size,
+            };
+            *size = u32::MAX - 1;
+            let bytes = encode_stream(&header, &[]);
+            assert!(
+                DbiStream::read(ShortReader(&bytes)).is_err(),
+                "field {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn substream_bounds_are_enforced_without_consuming_the_next_stream() {
+        // A section map must consume exactly its declared region.
+        let mut header = empty_header();
+        header.section_map_size = 5;
+        let bytes = encode_stream(&header, &[0; 7]);
+        let mut reader = Cursor::new(bytes);
+        assert!(DbiStream::read(&mut reader).is_err());
+        assert_eq!(reader.position(), 68);
+
+        // A module/file-name region that ends early must not masquerade as EOF.
+        for field in 0..2 {
+            let mut header = empty_header();
+            if field == 0 {
+                header.modi_stream_size = 4;
+            } else {
+                header.file_info_size = 8;
+            }
+            assert!(DbiStream::read(encode_stream(&header, &[0; 4]).as_slice()).is_err());
+        }
+
+        // Odd debug-header sizes must not silently discard their final byte.
+        let mut header = empty_header();
+        header.optional_db_header_size = 3;
+        assert!(DbiStream::read(encode_stream(&header, &[0; 3]).as_slice()).is_err());
+
+        // Partial contribution records must stay inside the declared substream.
+        header = empty_header();
+        header.sec_contr_stream_size = 5;
+        let mut payload = Vec::new();
+        SectionContribVersion::Ver60
+            .encode(constants::ENDIANESS, &mut payload)
+            .unwrap();
+        payload.extend_from_slice(&[0; 32]);
+        let mut reader = Cursor::new(encode_stream(&header, &payload));
+        assert!(DbiStream::read(&mut reader).is_err());
+        assert_eq!(reader.position(), 69);
+    }
+
+    #[test]
+    fn file_info_uses_module_sum_even_when_legacy_count_wraps() {
+        let info = FileInfo {
+            num_modules: 2,
+            num_source_files: 0,
+            module_indicies: vec![0, 1],
+            module_file_counts: vec![u16::MAX, 1],
+            file_name_offsets: (0..=u32::from(u16::MAX)).collect(),
+        };
+        let mut bytes = Vec::new();
+        info.encode((), &mut bytes).unwrap();
+        bytes.extend_from_slice(b"names\0");
+        let mut reader = bytes.as_slice();
+        let decoded = FileInfo::decode((), &mut reader).unwrap();
+        assert_eq!(decoded.file_name_offsets, info.file_name_offsets);
+        assert_eq!(reader, b"names\0");
+
+        // Even the maximum possible offset count must not be allocated up front.
+        let mut bytes = vec![0xff; 4 + usize::from(u16::MAX) * 4];
+        bytes[2..4].fill(0);
+        assert!(FileInfo::decode((), &mut ShortReader(&bytes)).is_err());
+    }
+
+    #[test]
+    fn auxiliary_streams_validate_record_sizes_and_decode_values() {
+        for size in 0..=80u32 {
+            let mut bytes = vec![0; size as usize];
+            let layout = MsfStreamLayout::new(vec![BlockIndex(0)], size);
+            let make_reader =
+                |bytes| BufReader::new(MsfStream::new(Cursor::new(bytes), &layout, 4096));
+            assert_eq!(
+                SectionHeaderStream::read(make_reader(bytes.clone())).is_ok(),
+                size % 40 == 0
+            );
+            assert_eq!(
+                FpoStream::read(make_reader(bytes.clone())).is_ok(),
+                size % 16 == 0
+            );
+            let frames = FrameDataStream::read(make_reader(bytes.clone()));
+            assert_eq!(frames.is_ok(), matches!(size % 32, 0 | 4), "size {size}");
+            if size == 32 || size == 36 {
+                let start = (size % 32) as usize;
+                bytes[start..start + 4].copy_from_slice(&123u32.to_le_bytes());
+                let mut source = Cursor::new(bytes);
+                let reader = BufReader::new(MsfStream::new(&mut source, &layout, 4096));
+                let frames = FrameDataStream::read(reader).unwrap();
+                assert_eq!(frames.frames[0].rva_start, 123);
+                assert_eq!(source.position(), u64::from(size));
+            }
+        }
     }
 }
 

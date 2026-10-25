@@ -50,25 +50,23 @@ impl Module {
     where
         R: io::Read,
     {
-        DebugSectionSignature::decode((), &mut source)?;
+        let mut symbol_stream = source.by_ref().take(u64::from(layout.sym_bytes));
+        DebugSectionSignature::decode((), &mut symbol_stream)?;
 
         let mut symbols = vec![];
         let mut record_index = 0usize;
-        let total = u64::from(layout.sym_bytes);
-        let mut consumed: u64 = 4; // signature already consumed
-        while consumed < total {
-            let (record, size) = PrefixedRecord::decode_with_size(&mut source).map_err(|e| {
+        while symbol_stream.limit() > 0 {
+            let consumed = u64::from(layout.sym_bytes) - symbol_stream.limit();
+            let (record, _) = PrefixedRecord::decode_with_size(&mut symbol_stream).map_err(|e| {
                 crate::result::Error::EncodingFailed(declio::Error::new(format!(
                     "module symbol stream: record #{record_index} at byte offset {consumed}: {e}"
                 )))
             })?;
-            consumed += size;
             record_index += 1;
             symbols.push(record.into_inner());
         }
 
-        let c11_bytes =
-            <Bytes<'_>>::decode(Len(layout.c11_bytes as usize), &mut source)?.into_vec();
+        let c11_bytes = codecs::read_bytes(&mut source, u64::from(layout.c11_bytes))?;
 
         let mut c13_records = vec![];
         let mut c13_stream = source.by_ref().take(layout.c13_bytes.into());
@@ -76,8 +74,7 @@ impl Module {
             c13_records.push(DebugSubsectionEntry::decode((), &mut c13_stream)?);
         }
 
-        let global_ref_bytes =
-            <Bytes<'_, u32>>::decode(constants::ENDIANESS, &mut source)?.into_vec();
+        let global_ref_bytes = codecs::prefixed_bytes::decode((), &mut source)?;
 
         let res = Self {
             symbols,
@@ -235,10 +232,7 @@ pub enum DebugSubsectionRecord {
     #[declio(id = "DebugSubsectionRecordType::Lines")]
     Lines {
         header: LineFragmentHeader,
-        #[declio(
-            with = "codecs::padded_rem_list",
-            ctx = "(header.flags, constants::ENDIANESS)"
-        )]
+        #[declio(with = "line_blocks", ctx = "(header.flags, constants::ENDIANESS)")]
         entries: Vec<LineColumnEntry>,
     },
     #[declio(id = "DebugSubsectionRecordType::FileChecksums")]
@@ -288,21 +282,133 @@ pub struct LineFragmentHeader {
 }
 
 /// An entry containing line and column number information.
-#[derive(Debug, Encode, Decode, EncodedSize)]
-#[declio(ctx = "flags: LineFlags, endian: Endian")]
+#[derive(Debug)]
 pub struct LineColumnEntry {
     /// Byte offset of the source file's entry in the file-checksums subsection.
     pub name_index: u32,
     /// Number of line entries.
     pub num_lines: u32,
-    /// Serialized size of this file's line block, not a machine-code size.
+    /// Original serialized block size. Encoding recomputes this from the arrays.
     pub code_size: u32,
     /// Array of line number entries.
-    #[declio(ctx = "Len(*num_lines as usize)")]
     pub line_numbers: Vec<LineNumberEntry>,
     /// Array of column number entries (if flags specify columns are present).
-    #[declio(ctx = "Len(*num_lines as usize)", skip_if = "!flags.has_columns()")]
     pub columns: Vec<ColumnNumberEntry>,
+}
+
+impl Encode<(LineFlags, Endian)> for LineColumnEntry {
+    fn encode<W: Write>(
+        &self,
+        (flags, endian): (LineFlags, Endian),
+        writer: &mut W,
+    ) -> std::result::Result<(), declio::Error> {
+        if self.line_numbers.len() != self.num_lines as usize
+            || (flags.has_columns() && self.columns.len() != self.line_numbers.len())
+            || (!flags.has_columns() && !self.columns.is_empty())
+        {
+            return Err(declio::Error::new("line block counts do not match arrays"));
+        }
+        let size = u32::try_from(self.encoded_size((flags, endian)))
+            .map_err(|_| declio::Error::new("line block exceeds u32 size"))?;
+        self.name_index.encode(endian, writer)?;
+        self.num_lines.encode(endian, writer)?;
+        size.encode(endian, writer)?;
+        for line in &self.line_numbers {
+            line.encode((), writer)?;
+        }
+        if flags.has_columns() {
+            for column in &self.columns {
+                column.encode((), writer)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl EncodedSize<(LineFlags, Endian)> for LineColumnEntry {
+    fn encoded_size(&self, (flags, _): (LineFlags, Endian)) -> usize {
+        12 + self.line_numbers.len() * 8
+            + if flags.has_columns() {
+                self.columns.len() * 4
+            } else {
+                0
+            }
+    }
+}
+
+impl Decode<(LineFlags, Endian)> for LineColumnEntry {
+    fn decode<R: Read>(
+        (flags, endian): (LineFlags, Endian),
+        reader: &mut R,
+    ) -> std::result::Result<Self, declio::Error> {
+        let name_index = u32::decode(endian, reader)?;
+        let num_lines = u32::decode(endian, reader)?;
+        let code_size = u32::decode(endian, reader)?;
+        let payload_size = code_size
+            .checked_sub(12)
+            .ok_or_else(|| declio::Error::new("line block size is smaller than its header"))?;
+        let line_info_size = u64::from(num_lines) * if flags.has_columns() { 12 } else { 8 };
+        if line_info_size > u64::from(payload_size) {
+            return Err(declio::Error::new("line arrays exceed line block size"));
+        }
+
+        let mut block = reader.take(u64::from(payload_size));
+        let mut line_numbers = Vec::new();
+        for _ in 0..num_lines {
+            line_numbers.push(LineNumberEntry::decode((), &mut block)?);
+        }
+        let mut columns = Vec::new();
+        if flags.has_columns() {
+            for _ in 0..num_lines {
+                columns.push(ColumnNumberEntry::decode((), &mut block)?);
+            }
+        }
+        // LLVM advances by BlockSize, not just by the decoded array sizes.
+        let remaining = block.limit();
+        if io::copy(&mut block, &mut io::sink())? != remaining {
+            return Err(declio::Error::new("truncated line block"));
+        }
+        Ok(Self {
+            name_index,
+            num_lines,
+            code_size,
+            line_numbers,
+            columns,
+        })
+    }
+}
+
+mod line_blocks {
+    use super::*;
+
+    pub fn decode<R: Read>(
+        ctx: (LineFlags, Endian),
+        reader: &mut R,
+    ) -> std::result::Result<Vec<LineColumnEntry>, declio::Error> {
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes)?;
+        let mut remaining = bytes.as_slice();
+        let mut entries = Vec::new();
+        while !remaining.is_empty() {
+            entries.push(LineColumnEntry::decode(ctx, &mut remaining)?);
+        }
+        Ok(entries)
+    }
+
+    pub fn encode<W: Write>(
+        entries: &[LineColumnEntry],
+        ctx: (LineFlags, Endian),
+        writer: &mut W,
+    ) -> std::result::Result<(), declio::Error> {
+        for entry in entries {
+            entry.encode(ctx, writer)?;
+        }
+        Ok(())
+    }
+
+    pub fn encoded_size(entries: &[LineColumnEntry], ctx: (LineFlags, Endian)) -> usize {
+        entries.iter().map(|entry| entry.encoded_size(ctx)).sum()
+    }
 }
 
 /// Flags for line number entries.
@@ -372,6 +478,276 @@ mod tests {
 
     use super::*;
     use crate::msf::{DEFAULT_BLOCK_SIZE, DefaultMsfStreamWriter, MsfStream};
+
+    #[test]
+    fn module_symbol_region_includes_signature_and_preserves_following_regions() {
+        // Signature, S_END, C11, C13 inlinee lines, global references, sentinel.
+        let bytes = [
+            4, 0, 0, 0, 2, 0, 6, 0, 0xaa, 0xbb, 0xf6, 0, 0, 0, 4, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0,
+            7, 8, 9, 0xcc,
+        ];
+        let layout = ModuleLayout {
+            sym_bytes: 8,
+            c11_bytes: 2,
+            c13_bytes: 12,
+        };
+        let mut reader = Cursor::new(bytes);
+        let module = Module::read(&mut reader, &layout).unwrap();
+        assert!(matches!(
+            module.symbols.as_slice(),
+            [SymbolRecord::ScopeEnd]
+        ));
+        assert_eq!(module.c11_bytes, [0xaa, 0xbb]);
+        assert_eq!(module.c13_records.len(), 1);
+        assert_eq!(module.c13_records[0].data, [1, 0, 0, 0]);
+        assert_eq!(module.global_ref_bytes, [7, 8, 9]);
+        assert_eq!(reader.position(), 29);
+        assert_eq!(u8::decode((), &mut reader).unwrap(), 0xcc);
+    }
+
+    #[test]
+    fn module_symbols_cannot_read_past_declared_region() {
+        let bytes = [4, 0, 0, 0, 2, 0, 6, 0, 0xaa, 0xbb, 0xcc, 0xdd];
+        // A short signature, partial prefix or partial body must not borrow
+        // bytes from C11/C13/global references to complete the symbol region.
+        for sym_bytes in [0, 1, 2, 3, 5, 6, 7] {
+            let mut reader = Cursor::new(bytes);
+            let layout = ModuleLayout {
+                sym_bytes,
+                c11_bytes: 0,
+                c13_bytes: 0,
+            };
+            assert!(Module::read(&mut reader, &layout).is_err(), "{sym_bytes}");
+            assert_eq!(reader.position(), u64::from(sym_bytes));
+            assert_eq!(
+                u8::decode((), &mut reader).unwrap(),
+                bytes[sym_bytes as usize]
+            );
+        }
+    }
+
+    #[test]
+    fn module_symbols_reject_undersized_and_truncated_records() {
+        for tail in [&[0][..], &[0, 0], &[1, 0], &[2, 0, 6]] {
+            let mut bytes = vec![4, 0, 0, 0, 2, 0, 6, 0];
+            bytes.extend_from_slice(tail);
+            let end = bytes.len();
+            bytes.extend_from_slice(&[0xaa, 0xbb, 0xcc, 0xdd]);
+            let mut reader = Cursor::new(bytes);
+            let layout = ModuleLayout {
+                sym_bytes: end as u32,
+                c11_bytes: 0,
+                c13_bytes: 0,
+            };
+            assert!(Module::read(&mut reader, &layout).is_err());
+            assert_eq!(reader.position() as usize, end);
+            assert_eq!(u8::decode((), &mut reader).unwrap(), 0xaa);
+        }
+        // Physical EOF before the declared end is not a successful short read.
+        for end in 0..8 {
+            let bytes = [4, 0, 0, 0, 2, 0, 6, 0];
+            let mut reader = Cursor::new(&bytes[..end]);
+            let layout = ModuleLayout {
+                sym_bytes: 8,
+                c11_bytes: 0,
+                c13_bytes: 0,
+            };
+            assert!(Module::read(&mut reader, &layout).is_err());
+            assert_eq!(reader.position() as usize, end);
+        }
+    }
+
+    fn line_block_bytes(words: &[u32]) -> Vec<u8> {
+        words.iter().flat_map(|word| word.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn c13_line_blocks_advance_by_block_size_without_extra_alignment() {
+        for has_columns in [false, true] {
+            let flags = LineFlags::new().with_has_columns(has_columns);
+            // Two line entries are followed by two column entries, not interleaved.
+            let mut first = line_block_bytes(&[0x10, 2, 0, 3, 0x8000_002a, 7, 0x0100_002b]);
+            if has_columns {
+                first.extend_from_slice(&[1, 0, 5, 0, 2, 0, 9, 0]);
+            }
+            // LLVM permits extra bytes within BlockSize, even an unaligned size.
+            first.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+            let first_size = first.len() as u32;
+            first[8..12].copy_from_slice(&first_size.to_le_bytes());
+            let mut bytes = first;
+            bytes.extend_from_slice(&line_block_bytes(&[
+                0x20,
+                1,
+                if has_columns { 24 } else { 20 },
+                11,
+                99,
+            ]));
+            if has_columns {
+                bytes.extend_from_slice(&[4, 0, 8, 0]);
+            }
+            let end = bytes.len();
+            bytes.push(0xee);
+            let mut reader = Cursor::new(&bytes);
+            let first =
+                LineColumnEntry::decode((flags, constants::ENDIANESS), &mut reader).unwrap();
+            assert_eq!(reader.position(), u64::from(first_size));
+            assert_eq!(
+                (first.name_index, first.num_lines, first.code_size),
+                (0x10, 2, first_size)
+            );
+            assert_eq!(first.line_numbers[0].offset, 3);
+            assert_eq!(first.line_numbers[0].flags, 0x8000_002a);
+            assert_eq!(first.line_numbers[1].offset, 7);
+            assert_eq!(first.line_numbers[1].flags, 0x0100_002b);
+            if has_columns {
+                assert_eq!(
+                    (first.columns[0].start_col, first.columns[0].end_col),
+                    (1, 5)
+                );
+                assert_eq!(
+                    (first.columns[1].start_col, first.columns[1].end_col),
+                    (2, 9)
+                );
+            } else {
+                assert!(first.columns.is_empty());
+            }
+            let next = LineColumnEntry::decode((flags, constants::ENDIANESS), &mut reader).unwrap();
+            assert_eq!(next.name_index, 0x20);
+            assert_eq!(next.line_numbers[0].offset, 11);
+            assert_eq!(next.line_numbers[0].flags, 99);
+            assert_eq!(reader.position() as usize, end);
+            assert_eq!(u8::decode((), &mut reader).unwrap(), 0xee);
+
+            let ctx = (flags, constants::ENDIANESS);
+            let mut encoded = Vec::new();
+            first.encode(ctx, &mut encoded).unwrap();
+            next.encode(ctx, &mut encoded).unwrap();
+            assert_eq!(
+                encoded.len(),
+                first.encoded_size(ctx) + next.encoded_size(ctx)
+            );
+            let mut roundtrip = Cursor::new(&encoded);
+            let first_again = LineColumnEntry::decode(ctx, &mut roundtrip).unwrap();
+            assert_eq!(first_again.code_size as usize, first.encoded_size(ctx));
+            assert_eq!(first_again.line_numbers[1].offset, 7);
+            assert_eq!(roundtrip.position() as usize, first.encoded_size(ctx));
+            let next_again = LineColumnEntry::decode(ctx, &mut roundtrip).unwrap();
+            assert_eq!(next_again.name_index, 0x20);
+            assert_eq!(next_again.line_numbers[0].flags, 99);
+            if has_columns {
+                assert_eq!(next_again.columns[0].end_col, 8);
+            }
+            assert_eq!(roundtrip.position() as usize, encoded.len());
+
+            // Exercise the subsection's list decoder as well as individual blocks.
+            let mut payload =
+                line_block_bytes(&[0, if has_columns { 0x0001_0001 } else { 1 }, 100]);
+            payload.extend_from_slice(&bytes[..end]);
+            let mut reader = Cursor::new(payload);
+            let DebugSubsectionRecord::Lines { entries, .. } =
+                DebugSubsectionRecord::decode(DebugSubsectionRecordType::Lines, &mut reader)
+                    .unwrap()
+            else {
+                panic!("expected lines");
+            };
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[1].name_index, 0x20);
+            assert_eq!(reader.position() as usize, 12 + end);
+        }
+    }
+
+    #[test]
+    fn c13_line_block_encoder_rejects_inconsistent_counts() {
+        let mut entry = LineColumnEntry {
+            name_index: 0,
+            num_lines: 1,
+            code_size: 0,
+            line_numbers: vec![],
+            columns: vec![],
+        };
+        let mut bytes = Vec::new();
+        let flags = LineFlags::new();
+        assert!(
+            entry
+                .encode((flags, constants::ENDIANESS), &mut bytes)
+                .is_err()
+        );
+        entry.line_numbers.push(LineNumberEntry {
+            offset: 0,
+            flags: 1,
+        });
+        assert!(
+            entry
+                .encode(
+                    (flags.with_has_columns(true), constants::ENDIANESS),
+                    &mut bytes
+                )
+                .is_err()
+        );
+        assert!(bytes.is_empty());
+    }
+
+    #[test]
+    fn c13_line_blocks_validate_sizes_before_reading_arrays() {
+        for has_columns in [false, true] {
+            let flags = LineFlags::new().with_has_columns(has_columns);
+            for (num_lines, block_size) in [
+                (0, 0),
+                (0, 11),
+                (1, 12),
+                (1, 19),
+                (u32::MAX, u32::MAX),
+                (0x2000_0000, 12),
+            ] {
+                let mut bytes = line_block_bytes(&[0, num_lines, block_size]);
+                bytes.extend_from_slice(&[0xaa; 32]);
+                let mut reader = Cursor::new(bytes);
+                assert!(
+                    LineColumnEntry::decode((flags, constants::ENDIANESS), &mut reader).is_err()
+                );
+                assert_eq!(reader.position(), 12);
+                assert_eq!(u8::decode((), &mut reader).unwrap(), 0xaa);
+            }
+        }
+        // Enough room for lines alone is insufficient when columns are present.
+        let mut reader = Cursor::new(line_block_bytes(&[0, 1, 20, 7, 42, 0x0005_0001]));
+        assert!(
+            LineColumnEntry::decode(
+                (
+                    LineFlags::new().with_has_columns(true),
+                    constants::ENDIANESS
+                ),
+                &mut reader,
+            )
+            .is_err()
+        );
+        assert_eq!(reader.position(), 12);
+    }
+
+    #[test]
+    fn c13_line_blocks_reject_truncated_headers_arrays_and_extra_bytes() {
+        for has_columns in [false, true] {
+            let flags = LineFlags::new().with_has_columns(has_columns);
+            let mut bytes = line_block_bytes(&[0, 1, if has_columns { 28 } else { 24 }, 7, 42]);
+            if has_columns {
+                bytes.extend_from_slice(&[1, 0, 5, 0]);
+            }
+            bytes.extend_from_slice(&[0xaa; 4]);
+            for end in 0..bytes.len() {
+                let mut reader = Cursor::new(&bytes[..end]);
+                assert!(
+                    LineColumnEntry::decode((flags, constants::ENDIANESS), &mut reader).is_err()
+                );
+                assert_eq!(reader.position() as usize, end);
+            }
+            // An empty block is valid, and must not swallow the next block.
+            let mut reader = Cursor::new(line_block_bytes(&[0x10, 0, 12, 0x20, 0, 12]));
+            let entries = line_blocks::decode((flags, constants::ENDIANESS), &mut reader).unwrap();
+            assert_eq!(entries.len(), 2);
+            assert_eq!(entries[1].name_index, 0x20);
+            assert_eq!(reader.position(), 24);
+        }
+    }
 
     #[test]
     fn c13_encoding_sizes_lengths_and_positions() {
