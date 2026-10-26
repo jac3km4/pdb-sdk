@@ -119,6 +119,51 @@ mod tests {
     struct Byte(u8);
 
     #[test]
+    fn optional_symbol_offsets_roundtrip() {
+        use crate::primitives::SymbolOffset;
+
+        for (value, expected) in [
+            (None, [0, 0, 0, 0]),
+            (
+                Some(SymbolOffset::from(0x12345678)),
+                [0x78, 0x56, 0x34, 0x12],
+            ),
+        ] {
+            let mut bytes = vec![];
+            optional_non_zero::encode(&value, (), &mut bytes).unwrap();
+            assert_eq!(bytes, expected);
+            bytes.push(0xaa);
+            let mut reader = bytes.as_slice();
+            assert_eq!(
+                optional_non_zero::decode::<SymbolOffset, _, _>((), &mut reader).unwrap(),
+                value
+            );
+            assert_eq!(reader, [0xaa]);
+        }
+
+        assert!(optional_non_zero::decode::<SymbolOffset, _, _>((), &mut &[0, 0, 0][..]).is_err());
+        // Zero remains valid when an offset is not an optional link.
+        assert_eq!(
+            SymbolOffset::decode((), &mut &[0; 4][..]).unwrap(),
+            SymbolOffset::from(0)
+        );
+    }
+
+    #[test]
+    fn optional_type_indices_decode() {
+        use crate::primitives::TypeIndex;
+
+        assert_eq!(
+            optional_non_zero::decode::<TypeIndex, _, _>((), &mut &[0; 4][..]).unwrap(),
+            None
+        );
+        assert_eq!(
+            optional_non_zero::decode::<TypeIndex, _, _>((), &mut &[1, 0x10, 0, 0][..]).unwrap(),
+            Some(TypeIndex::try_from(0x1001).unwrap())
+        );
+    }
+
+    #[test]
     fn lists_reject_no_progress() {
         assert!(rem_list::decode::<NoProgress, _, _>((), &mut &[1][..]).is_err());
         assert!(padded_rem_list::decode::<NoProgress, _, _>((), &mut &[1, 2, 3, 4][..]).is_err());
@@ -276,11 +321,11 @@ pub mod string_vector_z {
     }
 }
 
-/// Four-byte little-endian optional index adapter.
+/// Four-byte little-endian optional non-zero number adapter.
 ///
-/// Encoding writes zero for `None`; decoding maps any failed `TryFrom<u32>`
-/// conversion to `None`. For nonzero index wrappers, only zero is rejected.
-pub mod optional_index {
+/// Encoding writes zero for `None`; decoding maps zero to `None` before
+/// converting the index.
+pub mod optional_non_zero {
     use declio::{Decode, Encode, Error};
 
     use crate::constants;
@@ -301,10 +346,11 @@ pub mod optional_index {
         A: TryFrom<u32>,
         R: std::io::Read,
     {
-        match A::try_from(u32::decode(constants::ENDIANESS, reader)?) {
-            Err(_) => Ok(None),
-            Ok(i) => Ok(Some(i)),
+        let value = u32::decode(constants::ENDIANESS, reader)?;
+        if value == 0 {
+            return Ok(None);
         }
+        Ok(A::try_from(value).ok())
     }
 
     #[inline]

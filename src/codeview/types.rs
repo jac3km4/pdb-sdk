@@ -30,7 +30,7 @@ pub enum TypeRecord {
     /// Describes a pointer to another type.
     Pointer {
         /// The type being pointed to.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         referent: Option<TypeIndex>,
         /// Pointer attributes.
         properties: PointerProperties,
@@ -45,7 +45,7 @@ pub enum TypeRecord {
     /// Describes a modified type (e.g., const, volatile).
     Modifier {
         /// The type being modified.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         modified_type: Option<TypeIndex>,
         /// Modifier attributes.
         properties: ModifierProperties,
@@ -54,7 +54,7 @@ pub enum TypeRecord {
     /// Describes a procedure (function) type.
     Procedure {
         /// Return type of the procedure.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         return_type: Option<TypeIndex>,
         /// Calling convention.
         calling_conv: CallingConvention,
@@ -69,13 +69,13 @@ pub enum TypeRecord {
     /// Describes a member function type.
     MemberFunction {
         /// Return type of the procedure.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         return_type: Option<TypeIndex>,
         /// The class type this method belongs to.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         class_type: Option<TypeIndex>,
         /// Type of the `this` pointer.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         this_type: Option<TypeIndex>,
         /// Calling convention.
         calling_conv: CallingConvention,
@@ -159,7 +159,7 @@ pub enum TypeRecord {
         /// Complete class type.
         complete_class: TypeIndex,
         /// Overridden virtual function table.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         overriden_vftable: Option<TypeIndex>,
         /// Offset of the virtual function pointer.
         vfptr_offset: u32,
@@ -226,7 +226,7 @@ pub enum TypeRecord {
         /// Member attributes.
         properties: MemberProperties,
         /// Type of the data member.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         field_type: Option<TypeIndex>,
         /// Byte offset within the containing object.
         offset: Integer,
@@ -249,7 +249,7 @@ pub enum TypeRecord {
         /// Member attributes.
         properties: MemberProperties,
         /// Type of the method.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         method_type: Option<TypeIndex>,
         /// Offset in the vtable.
         #[declio(skip_if = "!properties.method_kind().is_introducing()")]
@@ -338,7 +338,7 @@ pub enum IdRecord {
     /// Identifies a function.
     FuncId {
         /// Parent scope type.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         parent_scope: Option<TypeIndex>,
         /// Function type.
         function_type: TypeIndex,
@@ -377,7 +377,7 @@ pub enum IdRecord {
     /// An ID for a string.
     StringId {
         /// Optional IPI substring-list reference, represented as `TypeIndex`.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         id: Option<TypeIndex>,
         /// The string data.
         string: StrBuf,
@@ -415,13 +415,13 @@ pub struct StructRecord {
     /// Class properties.
     pub properties: ClassProperties,
     /// Field list type index.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub field_list: Option<TypeIndex>,
     /// Derivation list type index.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub derivation_list: Option<TypeIndex>,
     /// VTable shape type index.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub vtable_shape: Option<TypeIndex>,
     /// Size in bytes.
     pub size: Integer,
@@ -439,13 +439,13 @@ pub struct StructRecord2 {
     /// Class properties (v2).
     pub properties: ClassPropertiesV2,
     /// Field list type index.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub field_list: Option<TypeIndex>,
     /// Derivation list type index.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub derivation_list: Option<TypeIndex>,
     /// VTable shape type index.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub vtable_shape: Option<TypeIndex>,
     /// Number of members, encoded as a numeric leaf.
     pub member_count: Integer,
@@ -467,7 +467,7 @@ pub struct UnionRecord {
     /// Class properties.
     pub properties: ClassProperties,
     /// Field list type index.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub field_list: Option<TypeIndex>,
     /// Size in bytes.
     pub size: Integer,
@@ -487,10 +487,10 @@ pub struct EnumRecord {
     /// Class properties.
     pub properties: ClassProperties,
     /// Underlying integer type.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub underlying_type: Option<TypeIndex>,
     /// Field list type index.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub field_list: Option<TypeIndex>,
     /// Name of the enum.
     pub name: StrBuf,
@@ -536,7 +536,7 @@ pub struct MethodListEntry {
     /// Reserved padding.
     pub reserved: [u8; 2],
     /// Type index of the method.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub method_type: Option<TypeIndex>,
     /// Vtable offset, encoded only for introducing virtual methods.
     #[declio(skip_if = "!properties.method_kind().is_introducing()")]

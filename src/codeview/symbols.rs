@@ -48,12 +48,12 @@ pub enum SymbolRecord {
     #[declio(id = "constants::S_THUNK32.into()")]
     Thunk32 {
         /// Optional offset of the parent symbol.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         parent: Option<SymbolOffset>,
         /// Offset of the end of the scope.
         end: SymbolOffset,
         /// Optional offset of the next symbol.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         next: Option<SymbolOffset>,
         /// Offset within the data region.
         offset: DataRegionOffset,
@@ -170,7 +170,7 @@ pub enum SymbolRecord {
     #[declio(id = "constants::S_INLINESITE.into()")]
     InlineSite {
         /// Optional offset of the parent symbol.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         parent: Option<SymbolOffset>,
         /// Offset of the end of the scope.
         end: SymbolOffset,
@@ -182,7 +182,7 @@ pub enum SymbolRecord {
     #[declio(id = "constants::S_INLINESITE2.into()")]
     InlineSite2 {
         /// Offset of the parent symbol.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         parent: Option<SymbolOffset>,
         /// Offset of the end of the scope.
         end: SymbolOffset,
@@ -208,7 +208,7 @@ pub enum SymbolRecord {
     #[declio(id = "constants::S_SEPCODE.into()")]
     SepCode {
         /// Offset of the parent procedure's symbol.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         parent: Option<SymbolOffset>,
         /// Offset of the block-end sentinel.
         end: SymbolOffset,
@@ -229,7 +229,7 @@ pub enum SymbolRecord {
     #[declio(id = "constants::S_LOCAL.into()")]
     Local {
         /// Type of the local variable.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         local_type: Option<TypeIndex>,
         /// Properties of the local variable.
         properties: LocalProperties,
@@ -430,7 +430,7 @@ pub enum SymbolRecord {
         /// Reserved padding word.
         reserved: u16,
         /// Type of the call.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         call_type: Option<TypeIndex>,
     },
     /// A file-static variable.
@@ -509,7 +509,7 @@ pub enum SymbolRecord {
         /// Offset relative to the register.
         offset: u32,
         /// Type of the value.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         value_type: Option<TypeIndex>,
         /// The register containing the value.
         register: Register,
@@ -574,7 +574,7 @@ pub enum SymbolRecord {
         /// Offset relative to the register.
         offset: u32,
         /// Type of the value.
-        #[declio(with = "codecs::optional_index")]
+        #[declio(with = "codecs::optional_non_zero")]
         value_type: Option<TypeIndex>,
         /// Indirection flags.
         flags: u32,
@@ -812,7 +812,7 @@ pub struct Constant {
 /// Record describing a data symbol.
 pub struct Data {
     /// Type index of the data.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub data_type: Option<TypeIndex>,
     /// Offset in the data region.
     pub offset: DataRegionOffset,
@@ -877,12 +877,12 @@ pub struct ProcedureRef {
 /// to a TPI type or an IPI function ID.
 pub struct Procedure {
     /// Optional offset of the parent symbol.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub parent: Option<SymbolOffset>,
     /// Offset of the end of the scope.
     pub end: SymbolOffset,
     /// Optional offset of the next symbol.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub next: Option<SymbolOffset>,
     /// Size of the code.
     pub code_size: u32,
@@ -891,7 +891,7 @@ pub struct Procedure {
     /// Debug end offset.
     pub dbg_end_offset: u32,
     /// TPI function type or IPI function ID, represented as `TypeIndex`.
-    #[declio(with = "codecs::optional_index")]
+    #[declio(with = "codecs::optional_non_zero")]
     pub function_type: Option<TypeIndex>,
     /// Offset of the code region.
     pub code_offset: DataRegionOffset,
