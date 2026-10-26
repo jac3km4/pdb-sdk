@@ -23,7 +23,7 @@ structs/forward declarations, enums, unions, arrays, modifiers, pointers,
 procedures, globals/publics, type/ID hashes, strings, modules, and C13 line/checksum
 subsections. They do **not** establish support for C++ templates/inheritance,
 Rust, historical formats, FASTLINK, type servers, ARM64, or stripped PDBs.
-The historical `tests/llvm.pdb` is separate, not provenance-verified coverage.
+
 
 ## Reference data
 
@@ -70,6 +70,5 @@ require deliberate anchor updates. Add toolchains through generator pipelines;
 new source programs may need new anchor schemas. Keep fixtures small and
 feature-driven.
 
-See [LLVM's PDB guide](https://llvm.org/docs/PDB/index.html) for format background,
-[fixture notes](../fixtures/README.md) for the historical binary, and the
-[fuzzing guide](../../fuzz/README.md) for adversarial testing.
+See [LLVM's PDB guide](https://llvm.org/docs/PDB/index.html) for format background
+and the [fuzzing guide](../../fuzz/README.md) for adversarial testing.

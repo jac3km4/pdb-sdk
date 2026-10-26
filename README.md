@@ -40,7 +40,7 @@ For a fixture-free builder/readback example, see the executable example in the
 
 Run `cargo run --locked --example <name>` from the repository root:
 
-- [`read`](examples/read.rs): inspect `tests/llvm.pdb`.
+- [`read`](examples/read.rs): inspect `tests/corpus/clang-lld-x64.pdb`.
 - [`write`](examples/write.rs): create or overwrite `custom.pdb`.
 - [`fake_pdb`](examples/fake_pdb.rs): run with `-- <exe_path>`. Copies a PE's PDB
   identity and section headers, but uses hard-coded demonstration symbols and

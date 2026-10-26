@@ -1,4 +1,4 @@
-//! Inspect selected streams in the historical `tests/llvm.pdb` fixture.
+//! Inspect selected streams in the `tests/corpus/clang-lld-x64.pdb` fixture.
 
 use std::fs::File;
 
@@ -6,7 +6,7 @@ use pdb_sdk::PdbFile;
 use pdb_sdk::result::Result;
 
 fn main() -> Result<()> {
-    let mut reader = PdbFile::open(File::open("./tests/llvm.pdb")?)?;
+    let mut reader = PdbFile::open(File::open("./tests/corpus/clang-lld-x64.pdb")?)?;
     let dbi = reader.get_dbi()?;
 
     let first_module = dbi.modules().first();
@@ -23,10 +23,10 @@ fn main() -> Result<()> {
 
     let hash = reader.get_tpi_hash(&tpi)?;
     // Inspect a hash candidate; the hash lookup does not verify the record's name.
-    if let Some(index) = hash.get_index("core::fmt::rt::v1::FormatSpec") {
+    if let Some(index) = hash.get_index("Sample") {
         dbg!(tpi.record(index));
     } else {
-        eprintln!("Type core::fmt::rt::v1::FormatSpec was not found");
+        eprintln!("Type Sample was not found");
     }
 
     let ipi = reader.get_ipi()?;
@@ -41,7 +41,7 @@ fn main() -> Result<()> {
     // show the first section header
     dbg!(headers.headers().first());
 
-    for dbi_mod in dbi.modules().iter().skip(1).take(1) {
+    for dbi_mod in dbi.modules().iter().take(1) {
         let module = reader.get_module(dbi_mod)?;
 
         // show a c13 record of a module

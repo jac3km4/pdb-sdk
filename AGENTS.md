@@ -22,7 +22,7 @@ its target filename, `AGENTS.md`.
 - `src/lib.rs`: public facade; `src/pdb.rs`: PDB access; `src/msf.rs`: container and streams.
 - `src/primitives.rs`: shared indices and numeric codecs; `src/builders/`: builder implementations.
 - `src/codeview/`: records; `src/codecs.rs`: encoding helpers.
-- `tests/roundtrip.rs`, `tests/real_pdb.rs`: integration tests.
+- `tests/roundtrip.rs`, `tests/corpus.rs`, `tests/writer_interop.rs`: integration tests.
 - `tests/common/llvm.rs`: LLVM discovery for integration tests.
 
 ## CI
