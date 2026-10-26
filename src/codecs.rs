@@ -125,7 +125,7 @@ mod tests {
         for (value, expected) in [
             (None, [0, 0, 0, 0]),
             (
-                Some(SymbolOffset::from(0x12345678)),
+                Some(SymbolOffset::from(0x1234_5678)),
                 [0x78, 0x56, 0x34, 0x12],
             ),
         ] {
